@@ -1,16 +1,15 @@
 diff --git a/bsd/dev/arm/systemcalls.c b/bsd/dev/arm/systemcalls.c
-index 7fd9be1..5b97d8e 100644
+index 7fd9be1..918f529 100644
 --- a/bsd/dev/arm/systemcalls.c
 +++ b/bsd/dev/arm/systemcalls.c
-@@ -102,6 +102,25 @@ unix_syscall(
+@@ -102,6 +102,24 @@ unix_syscall(
  
  	code = arm_get_syscall_number(state);
  
 +#if defined(SWEET)
 +	/*
 +	 * SWEET bring-up: entry+return trace for pid 1.  A "syscall N" line
-+	 * without a matching "ret N" names the call that never returns; the
-+	 * cap marker tells a capped trace apart from a hang.
++	 * without a matching "ret N" names the call that never returns.
 +	 */
 +	{
 +		static int sweet_pid1_calls;
@@ -28,8 +27,29 @@ index 7fd9be1..5b97d8e 100644
  #define unix_syscall_kprintf(x...)      /* kprintf("unix_syscall: " x) */
  
  	if (kdebug_enable && !code_is_kdebug_trace(code)) {
-@@ -179,6 +198,16 @@ unix_syscall(
+@@ -177,8 +195,37 @@ unix_syscall(
+ 	}
+ #endif /* CONFIG_DEBUG_SYSCALL_REJECTION */
  
++#if defined(SWEET)
++	/*
++	 * SWEET bring-up: pid 1 hangs inside a sysctl; print which one, and
++	 * which path it was opening, so the last line before the hang is a name.
++	 */
++	if (proc_pid(proc) == 1 && code == SYS___sysctl) {
++		int sweet_mib[2] = { -1, -1 };
++		if (copyin((user_addr_t)uthread->uu_arg[0], sweet_mib, sizeof(sweet_mib)) == 0) {
++			printf("SWEETPID1 sysctl %d.%d\n", sweet_mib[0], sweet_mib[1]);
++		}
++	}
++	if (proc_pid(proc) == 1 && code == SYS_open) {
++		char sweet_path[128];
++		if (copyinstr((user_addr_t)uthread->uu_arg[0], sweet_path, sizeof(sweet_path), NULL) == 0) {
++			printf("SWEETPID1 open %s\n", sweet_path);
++		}
++	}
++#endif
++
  	AUDIT_SYSCALL_ENTER(code, proc, uthread);
  	error = (*(callp->sy_call))(proc, &uthread->uu_arg[0], &(uthread->uu_rval[0]));
 +
