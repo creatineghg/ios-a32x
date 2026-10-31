@@ -1,0 +1,40 @@
+diff --git a/iokit/Kernel/IOService.cpp b/iokit/Kernel/IOService.cpp
+--- a/iokit/Kernel/IOService.cpp
++++ b/iokit/Kernel/IOService.cpp
+@@ -240,3 +240,5 @@
+ static IOService *              gIOResources;
++extern "C" char                 sweet_term_name[64];
++
+ static IOService *              gIOUserResources;
+ static IOService *              gIOServiceRoot;
+@@ -3154,3 +3156,4 @@
+ 	options |= kIOServiceRequired;
++	sweet_term_name[0] = '\0';
+ 
+ 	doPhase2List  = OSArray::withCapacity( 16 );
+@@ -3169,4 +3172,6 @@
+ 		while ((victim = (IOService *) gIOTerminatePhase2List->getObject(0))) {
+ 			victim->retain();
+ 			gIOTerminatePhase2List->removeObject(0);
++			strlcpy(sweet_term_name, victim->getName() ? victim->getName() : "?",
++			    sizeof(sweet_term_name));
+ 			IOLockUnlock( gJobsLock );
+@@ -3257,3 +3262,5 @@
+ 			while ((victim = (IOService *) didPhase2List->getObject(0))) {
+ 				bool scheduleFinalize = false;
++				strlcpy(sweet_term_name, victim->getName() ? victim->getName() : "?",
++				    sizeof(sweet_term_name));
+ 				if (victim->lockForArbitration( true )) {
+diff --git a/osfmk/arm64/sleh.c b/osfmk/arm64/sleh.c
+--- a/osfmk/arm64/sleh.c
++++ b/osfmk/arm64/sleh.c
+@@ -1650,5 +1650,6 @@
+ 		}
+-		panic("SWEET: data abort far=0x%llx pc=0x%llx caller_lr=0x%llx",
+-		    (uint64_t)fault_addr, (uint64_t)get_saved_state_pc(state),
+-		    caller);
++		extern char sweet_term_name[];
++		panic("SWEET: data abort far=0x%llx pc=0x%llx caller_lr=0x%llx term=%s",
++		    (uint64_t)fault_addr, (uint64_t)get_saved_state_pc(state),
++		    caller, sweet_term_name);
+ 	}
