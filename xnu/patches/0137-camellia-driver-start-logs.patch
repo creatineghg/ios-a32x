@@ -1,0 +1,41 @@
+diff --git a/iokit/Kernel/arm/SweetWatchdog.cpp b/iokit/Kernel/arm/SweetWatchdog.cpp
+--- a/iokit/Kernel/arm/SweetWatchdog.cpp
++++ b/iokit/Kernel/arm/SweetWatchdog.cpp
+@@ -45,3 +45,4 @@
+ {
++	IOLog("SWEET: IOWatchdog start\n");
+ 	if (!IOService::start(provider)) {
+ 		return false;
+diff --git a/iokit/Kernel/arm/SweetBattery.cpp b/iokit/Kernel/arm/SweetBattery.cpp
+--- a/iokit/Kernel/arm/SweetBattery.cpp
++++ b/iokit/Kernel/arm/SweetBattery.cpp
+@@ -261,3 +261,4 @@
+ {
++	IOLog("SWEET: SweetBattery start\n");
+ 	if (!IOPMPowerSource::start(provider)) {
+ 		return false;
+diff --git a/iokit/Kernel/arm/SweetKeyStore.cpp b/iokit/Kernel/arm/SweetKeyStore.cpp
+--- a/iokit/Kernel/arm/SweetKeyStore.cpp
++++ b/iokit/Kernel/arm/SweetKeyStore.cpp
+@@ -73,3 +73,4 @@
+ {
++	IOLog("SWEET: AppleKeyStore start\n");
+ 	if (!IOService::start(provider)) {
+ 		return false;
+diff --git a/iokit/Kernel/arm/SweetCPU.cpp b/iokit/Kernel/arm/SweetCPU.cpp
+--- a/iokit/Kernel/arm/SweetCPU.cpp
++++ b/iokit/Kernel/arm/SweetCPU.cpp
+@@ -63,3 +63,4 @@
+ {
++	IOLog("SWEET: SweetCPU start\n");
+ 	const ml_topology_info_t *topology = ml_get_topology_info();
+ 	OSNumber *logical = OSDynamicCast(OSNumber, provider->getProperty("logical-cpu-id"));
+diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -187,4 +187,5 @@
+ {
+ 	PE_Video video;
+ 
++	IOLog("SWEET: AppleCLCD start\n");
+ 	sweet_display_state = -1;
