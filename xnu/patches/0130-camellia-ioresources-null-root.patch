@@ -6,9 +6,9 @@ diff --git a/iokit/Kernel/IOService.cpp b/iokit/Kernel/IOService.cpp
  {
  	gIOPlatform = platform;
 -	gIOResources->attachToParent( gIOServiceRoot, gIOServicePlane );
-+	gIOResources->attachToParent(gIOServiceRoot ? gIOServiceRoot : this, gIOServicePlane);
++	gIOResources->attachToParent(gIOServiceRoot ? gIOServiceRoot : platform, gIOServicePlane);
  
 -	gIOUserResources->attachToParent( gIOServiceRoot, gIOServicePlane );
-+	gIOUserResources->attachToParent(gIOServiceRoot ? gIOServiceRoot : this, gIOServicePlane);
++	gIOUserResources->attachToParent(gIOServiceRoot ? gIOServiceRoot : platform, gIOServicePlane);
  
  #if defined(SWEET)
