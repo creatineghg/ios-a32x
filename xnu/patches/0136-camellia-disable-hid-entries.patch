@@ -1,0 +1,17 @@
+diff --git a/iokit/KernelConfigTables.cpp b/iokit/KernelConfigTables.cpp
+--- a/iokit/KernelConfigTables.cpp
++++ b/iokit/KernelConfigTables.cpp
+@@ -69,13 +69,3 @@
+     "   },"
+-    "   {"
+-    "     'IOClass'         = SweetHIDButtons;"
+-    "     'IOProviderClass' = IOResources;"
+-    "     'IOMatchCategory' = SweetHIDButtons;"
+-    "   },"
+-    "   {"
+-    "     'IOClass'         = SweetHIDTouch;"
+-    "     'IOProviderClass' = IOResources;"
+-    "     'IOMatchCategory' = SweetHIDTouch;"
+-    "   },"
+     "   {"
+     "     'IOClass'         = SweetBattery;"
