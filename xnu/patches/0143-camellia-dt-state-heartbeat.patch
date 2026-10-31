@@ -1,0 +1,41 @@
+diff --git a/iokit/Kernel/arm/SweetPlatformExpert.cpp b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+--- a/iokit/Kernel/arm/SweetPlatformExpert.cpp
++++ b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+@@ -23,3 +23,7 @@
+ OSDefineMetaClassAndStructors(SweetPlatformExpert, IODTPlatformExpert);
++
++extern "C" int sweet_dt_children = -1;
++extern "C" int sweet_dt_nubs = -1;
++extern "C" int sweet_dt_disp = -1;
+ 
+ bool
+@@ -78,3 +82,6 @@
+ 			while ((c = (IORegistryEntry *)it->getNextObject()) != NULL) {
+ 				OSData *comp = (OSData *)c->getProperty("compatible");
++				if (c->getName() != NULL && strcmp(c->getName(), "disp0") == 0) {
++					sweet_dt_disp = 1;
++				}
+ 				if (n < 12) {
+@@ -89,2 +95,3 @@
+ 		IOLog("SWEET DT: arm-io children=%d\n", n);
++		sweet_dt_children = n;
+ 		createNubs(this, IODTFindMatchingEntries(armio, kIODTExclusive, "('gic')"));
+@@ -99,2 +106,3 @@
+ 		IOLog("SWEET DT: platform nubs=%d\n", m);
++		sweet_dt_nubs = m;
+ 		armio->release();
+diff --git a/bsd/dev/sweet_ufs.c b/bsd/dev/sweet_ufs.c
+--- a/bsd/dev/sweet_ufs.c
++++ b/bsd/dev/sweet_ufs.c
+@@ -66,7 +66,9 @@
+ 		int res = sweet_iokit_count("IOResources");
+ 		int wdt = sweet_iokit_count("IOWatchdog");
+ 		int iomfb = sweet_iokit_count("IOMobileFramebuffer");
++		extern int sweet_dt_children, sweet_dt_nubs, sweet_dt_disp;
+ 		for (int i = 0; i < 16; i++) {
+-			printf("SWEET: hb disp=%d res=%d wdt=%d iomfb=%d\n",
+-			    sweet_display_state, res, wdt, iomfb);
++			printf("SWEET: hb disp=%d res=%d wdt=%d iomfb=%d dt=%d nubs=%d d0=%d\n",
++			    sweet_display_state, res, wdt, iomfb,
++			    sweet_dt_children, sweet_dt_nubs, sweet_dt_disp);
+ 		}
