@@ -1,0 +1,14 @@
+diff --git a/iokit/Kernel/IOService.cpp b/iokit/Kernel/IOService.cpp
+--- a/iokit/Kernel/IOService.cpp
++++ b/iokit/Kernel/IOService.cpp
+@@ -1561,8 +1561,8 @@
+ IOService::setPlatform( IOPlatformExpert * platform)
+ {
+ 	gIOPlatform = platform;
+-	gIOResources->attachToParent( gIOServiceRoot, gIOServicePlane );
++	gIOResources->attachToParent(gIOServiceRoot ? gIOServiceRoot : this, gIOServicePlane);
+ 
+-	gIOUserResources->attachToParent( gIOServiceRoot, gIOServicePlane );
++	gIOUserResources->attachToParent(gIOServiceRoot ? gIOServiceRoot : this, gIOServicePlane);
+ 
+ #if defined(SWEET)
