@@ -1,0 +1,22 @@
+diff --git a/iokit/Kernel/IOStartIOKit.cpp b/iokit/Kernel/IOStartIOKit.cpp
+--- a/iokit/Kernel/IOStartIOKit.cpp
++++ b/iokit/Kernel/IOStartIOKit.cpp
+@@ -185,4 +185,18 @@
+ 	bool ok = gRootNub->startIOServiceMatching();
+ 	if (__improbable(!ok)) {
+ 		panic("Failed to start IOService matching");
+ 	}
++	IOLog("SWEET: after matching platform=%p\n", IOService::getPlatform());
++	if (IOService::getPlatform() == NULL) {
++		IOService *pe = (IOService *)OSMetaClass::allocClassWithName("SweetPlatformExpert");
++		IOLog("SWEET: force PE alloc=%p\n", pe);
++		if (pe != NULL) {
++			bool iok = pe->init(gRootNub);
++			bool aok = iok && pe->attach(gRootNub);
++			bool sok = aok && pe->start(gRootNub);
++			IOLog("SWEET: force PE init=%d attach=%d start=%d\n", iok, aok, sok);
++			if (!sok) {
++				pe->release();
++			}
++		}
++	}
