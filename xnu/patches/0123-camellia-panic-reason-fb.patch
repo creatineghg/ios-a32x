@@ -1,0 +1,15 @@
+diff --git a/osfmk/kern/debug.c b/osfmk/kern/debug.c
+--- a/osfmk/kern/debug.c
++++ b/osfmk/kern/debug.c
+@@ -1440,6 +1440,11 @@
+ #pragma clang diagnostic push
+ #pragma clang diagnostic ignored "-Wformat-nonliteral"
+ 			_doprnt(debugger_panic_str, debugger_panic_args, consdebug_putc, 0);
++#if defined(SWEET)
++			printf("SWEETPANIC: ");
++			_doprnt(debugger_panic_str, debugger_panic_args, PE_kputc, 0);
++			printf("\n");
++#endif
+ #pragma clang diagnostic pop
+ 			panic_debugger_log("\n");
+ 		}
