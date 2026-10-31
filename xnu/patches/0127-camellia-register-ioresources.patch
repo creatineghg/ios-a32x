@@ -1,0 +1,24 @@
+diff --git a/iokit/Kernel/IOService.cpp b/iokit/Kernel/IOService.cpp
+--- a/iokit/Kernel/IOService.cpp
++++ b/iokit/Kernel/IOService.cpp
+@@ -1563,6 +1563,20 @@
+ 	gIOPlatform = platform;
+ 	gIOResources->attachToParent( gIOServiceRoot, gIOServicePlane );
+ 
+ 	gIOUserResources->attachToParent( gIOServiceRoot, gIOServicePlane );
+ 
++#if defined(SWEET)
++	/*
++	 * SWEET has no NVRAM/resource publishing before IOKit matching starts,
++	 * so IOResources was never a registry member when publishResource()
++	 * first tried to register it ("not registry member at registerService").
++	 * Register the resource services once here, after the attach: otherwise
++	 * IOResources-provided drivers (IOWatchdog, IOCoreSurfaceRoot,
++	 * AppleKeyStore, SweetHID, SweetBattery) never match and their clients
++	 * (watchdogd, backboardd, keybagd) crash or wait forever.
++	 */
++	gIOResources->registerService();
++	gIOUserResources->registerService();
++#endif
++
+ #if DEVELOPMENT || DEBUG
