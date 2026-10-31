@@ -1,0 +1,16 @@
+diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -185,3 +185,3 @@
+-extern "C" IOService *
++IOService *
+ sweet_display_create(IOService *provider)
+ {
+diff --git a/iokit/Kernel/arm/SweetPlatformExpert.cpp b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+--- a/iokit/Kernel/arm/SweetPlatformExpert.cpp
++++ b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+@@ -109,3 +109,3 @@
+ 		{
+-			extern "C" IOService *sweet_display_create(IOService *);
++			IOService *sweet_display_create(IOService *);
+ 			IOService *fb = sweet_display_create(this);
