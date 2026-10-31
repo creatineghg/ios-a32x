@@ -1,0 +1,65 @@
+diff --git a/bsd/dev/sweet_ufs.c b/bsd/dev/sweet_ufs.c
+index dc1f647..ed88861 100644
+--- a/bsd/dev/sweet_ufs.c
++++ b/bsd/dev/sweet_ufs.c
+@@ -114,6 +114,13 @@ static struct {
+ 	bool ready;
+ } su;
+ 
++/*
++ * A failed probe must not be retried: IOFindBSDRoot calls back every few
++ * seconds and every sweet_ufs_init() would leak its DMA area and bdevsw
++ * entries. Cleared by a reboot.
++ */
++static int sweet_ufs_init_error;
++
+ static LCK_GRP_DECLARE(sweet_ufs_grp, "sweet_ufs");
+ static LCK_MTX_DECLARE(sweet_ufs_lock, &sweet_ufs_grp);
+ 
+@@ -823,8 +830,12 @@ int
+ sweet_ufs_rootdev(dev_t *dev)
+ {
+ 	if (!su.ready) {
++		if (sweet_ufs_init_error) {
++			return sweet_ufs_init_error;
++		}
+ 		int error = sweet_ufs_init();
+ 		if (error) {
++			sweet_ufs_init_error = error;
+ 			return error;
+ 		}
+ 	}
+diff --git a/iokit/bsddev/IOKitBSDInit.cpp b/iokit/bsddev/IOKitBSDInit.cpp
+index e6c74aa..487b1d4 100644
+--- a/iokit/bsddev/IOKitBSDInit.cpp
++++ b/iokit/bsddev/IOKitBSDInit.cpp
+@@ -775,7 +775,28 @@ IOFindBSDRoot( char * rootName, unsigned int rootNameSize,
+ 		OSSafeReleaseNULL(matching);
+ 		int ufs_error = sweet_ufs_rootdev(root);
+ 		if (ufs_error) {
+-			panic("IOFindBSDRoot: SWEET UFS root %s unavailable: %d", rdBootVar, ufs_error);
++			/*
++			 * A bring-up kernel must not panic here: the mountroot loop
++			 * retries in a few seconds, and on the phone the console keeps
++			 * whatever we print visible for a photo.  ufshang=1 stops the
++			 * loop entirely (the previous diagnostic kernel patched the
++			 * panic branch to b . for the same effect).
++			 */
++			static bool sweet_ufs_reported = false;
++			uint32_t hang = 0;
++
++			if (!sweet_ufs_reported) {
++				sweet_ufs_reported = true;
++				IOLog("SWEET UFS: root %s unavailable: %d\n", rdBootVar, ufs_error);
++			}
++			PE_parse_boot_argn("ufshang", &hang, sizeof(hang));
++			if (hang) {
++				IOLog("SWEET UFS: ufshang=1, holding the diagnosis on screen\n");
++				for (;;) {
++					IOSleep(60 * 1000);
++				}
++			}
++			return kIOReturnNotFound;
+ 		}
+ 		strlcpy(rootName, rdBootVar, rootNameSize);
+ 		IOLog("BSD root: %s, major %d, minor %d\n", rootName, major(*root), minor(*root));

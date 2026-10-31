@@ -1,0 +1,20 @@
+diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
+index b67f331..889e92d 100644
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -771,11 +771,15 @@ bsd_init(void)
+ 	nwk_wq_init();
+ 	bsd_init_kprintf("calling dlil_init\n");
+ 	dlil_init();
++	kprintf("KB: after dlil_init\n");
+ #endif /* NETWORKING */
+ #if SOCKETS
+ 	bsd_init_kprintf("calling socketinit\n");
++	kprintf("KB: before socketinit\n");
+ 	socketinit();
++	kprintf("KB: after socketinit\n");
+ 	bsd_init_kprintf("calling domaininit\n");
++	kprintf("KB: before domaininit\n");
+ 	domaininit();
+ 	kprintf("KB: after domaininit\n");
+ 	iptap_init();

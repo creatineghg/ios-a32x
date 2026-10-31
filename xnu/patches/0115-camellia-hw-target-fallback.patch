@@ -1,0 +1,29 @@
+diff --git a/bsd/kern/kern_mib.c b/bsd/kern/kern_mib.c
+index ac1eba0..9d5d8db 100644
+--- a/bsd/kern/kern_mib.c
++++ b/bsd/kern/kern_mib.c
+@@ -502,14 +502,22 @@ sysctl_hw_generic(__unused struct sysctl_oid *oidp, void *arg1,
+ 	case HW_TARGET:
+ 		bzero(dummy, sizeof(dummy));
+ 		if (!PEGetTargetName(dummy, 64)) {
+-			return EINVAL;
++			/*
++			 * SWEET: dyld queries hw.target while launchd starts and
++			 * abort_with_reason(OS_REASON_GUARD, 6) when it fails, which
++			 * panics the kernel as "initproc failed to start".  The
++			 * platform expert cannot always name the target, so fall back
++			 * to the identity the ADT declares (mkadt.py /product), which
++			 * is what MobileGestalt expects anyway.
++			 */
++			strlcpy(dummy, "D22AP", sizeof(dummy));
+ 		}
+ 		dummy[64] = 0;
+ 		return SYSCTL_OUT(req, dummy, strlen(dummy) + 1);
+ 	case HW_PRODUCT:
+ 		bzero(dummy, sizeof(dummy));
+ 		if (!PEGetProductName(dummy, 64)) {
+-			return EINVAL;
++			strlcpy(dummy, "iPhone10,3", sizeof(dummy));
+ 		}
+ 		dummy[64] = 0;
+ 		return SYSCTL_OUT(req, dummy, strlen(dummy) + 1);

@@ -1,0 +1,19 @@
+diff --git a/iokit/bsddev/IOKitBSDInit.cpp b/iokit/bsddev/IOKitBSDInit.cpp
+--- a/iokit/bsddev/IOKitBSDInit.cpp
++++ b/iokit/bsddev/IOKitBSDInit.cpp
+@@ -1029,7 +1029,14 @@
+ void
+ IOSecureBSDRoot(const char * rootName)
+ {
+-#if CONFIG_SECURE_BSD_ROOT
++#if defined(ARM64_BOARD_CONFIG_SWEET)
++	/*
++	 * SWEET boots an unsigned kernel: there is no Image4/AMFI chain of
++	 * trust to extend, and the platform expert is not an IOPlatformExpert
++	 * IOService, so waitForMatchingService would only assert here.
++	 */
++	(void)rootName;
++#elif CONFIG_SECURE_BSD_ROOT
+ 	IOReturn         result;
+ 	IOPlatformExpert *pe;
+ 	OSDictionary     *matching;

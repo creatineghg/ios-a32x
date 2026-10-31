@@ -1,0 +1,14 @@
+diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
+index eb8c736..02e22f4 100644
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -714,7 +714,9 @@ bsd_init(void)
+ 
+ #if SOCKETS
+ 	/* Initialize per-CPU cache allocator */
++#if !defined(SWEET)
+ 	mcache_init();
++#endif
+ 	kprintf("KB: after mcache_init\n");
+ 
+ 	/* Initialize mbuf's. */

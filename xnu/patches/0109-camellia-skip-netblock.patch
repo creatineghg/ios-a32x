@@ -1,0 +1,20 @@
+diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
+index 1fdec26..435e9fe 100644
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -843,6 +843,7 @@ bsd_init(void)
+ 	bsd_autoconf();
+ 	kprintf("KB: after bsd_autoconf\n");
+ 
++#if !defined(SWEET)
+ #if CONFIG_DTRACE
+ 	dtrace_postinit();
+ 	kprintf("KB: after dtrace_postinit\n");
+@@ -911,6 +912,7 @@ bsd_init(void)
+ 	net_init_run();
+ 	kprintf("KB: after net_init_run\n");
+ #endif /* NETWORKING */
++#endif /* !defined(SWEET): skip dtrace + net init */
+ 
+ 	bsd_init_kprintf("calling inittodr\n");
+ 	kprintf("KB: before inittodr\n");

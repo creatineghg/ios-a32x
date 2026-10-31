@@ -1,0 +1,20 @@
+diff --git a/osfmk/kern/startup.c b/osfmk/kern/startup.c
+index bec97fb..c8b8baf 100644
+--- a/osfmk/kern/startup.c
++++ b/osfmk/kern/startup.c
+@@ -776,11 +776,15 @@ kernel_bootstrap_thread(void)
+ 	 * max_cpus must be nailed down by the time PE_lockdown_iokit() finishes,
+ 	 * at the latest
+ 	 */
++	kprintf("KB: before vm_set_restrictions\n");
+ 	vm_set_restrictions(machine_info.max_cpus);
++	kprintf("KB: after vm_set_restrictions\n");
+ 
+ 
+ #if KPERF
++	kprintf("KB: before kperf\n");
+ 	kperf_init_early();
++	kprintf("KB: after kperf\n");
+ #endif
+ 
+ 	/*

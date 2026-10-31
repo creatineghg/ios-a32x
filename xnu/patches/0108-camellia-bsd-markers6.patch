@@ -1,0 +1,42 @@
+diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
+index 2915af4..1fdec26 100644
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -845,6 +845,7 @@ bsd_init(void)
+ 
+ #if CONFIG_DTRACE
+ 	dtrace_postinit();
++	kprintf("KB: after dtrace_postinit\n");
+ #endif
+ 
+ 	/*
+@@ -855,7 +856,8 @@ bsd_init(void)
+ #include <loop.h>
+ #if NLOOP > 0
+ 	bsd_init_kprintf("calling loopattach\n");
+-	loopattach();                   /* XXX */
++	loopattach();
++	kprintf("KB: after loopattach\n");                   /* XXX */
+ #endif
+ #if NGIF
+ 	/* Initialize gif interface (after lo0) */
+@@ -871,6 +873,7 @@ bsd_init(void)
+ 	/* Register the built-in dlil ethernet interface family */
+ 	bsd_init_kprintf("calling ether_family_init\n");
+ 	ether_family_init();
++	kprintf("KB: after ether_family_init\n");
+ #endif /* ETHER */
+ 
+ #if NETWORKING
+@@ -906,9 +909,11 @@ bsd_init(void)
+ 	 */
+ 	bsd_init_kprintf("calling net_init_run\n");
+ 	net_init_run();
++	kprintf("KB: after net_init_run\n");
+ #endif /* NETWORKING */
+ 
+ 	bsd_init_kprintf("calling inittodr\n");
++	kprintf("KB: before inittodr\n");
+ 	inittodr(0);
+ 	kprintf("KB: bsd_init before mountroot loop\n");
+ 

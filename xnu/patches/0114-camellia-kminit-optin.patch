@@ -1,0 +1,25 @@
+diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
+index 7a17d89..f1f303d 100644
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -1108,6 +1108,20 @@ bsd_autoconf(void)
+ 	kprintf("bsd_autoconf: calling kminit\n");
+ #if !defined(SWEET)
+ 	kminit();
++#else
++	/*
++	 * /dev/console needs km_tty[0], which only kminit() creates, so opening
++	 * the console from userland faults on a NULL tty (cnopen -> cndev).
++	 * kminit was a bring-up showstopper on SWEET and is compiled out above,
++	 * so keep the tested default and ask for it explicitly with kminit=1.
++	 */
++	uint32_t km = 0;
++	PE_parse_boot_argn("kminit", &km, sizeof(km));
++	if (km) {
++		kprintf("bsd_autoconf: kminit=1 -> kminit()\n");
++		kminit();
++		kprintf("bsd_autoconf: kminit() returned\n");
++	}
+ #endif
+ 
+ 	/*

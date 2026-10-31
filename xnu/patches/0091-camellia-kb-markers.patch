@@ -1,0 +1,76 @@
+diff --git a/osfmk/kern/startup.c b/osfmk/kern/startup.c
+index bec97fb..09b5b55 100644
+--- a/osfmk/kern/startup.c
++++ b/osfmk/kern/startup.c
+@@ -669,7 +669,9 @@ kernel_bootstrap_thread(void)
+ 	bootprofile_init();
+ #endif
+ 
++	kprintf("KB: before SYSCTL\n");
+ 	kernel_startup_initialize_upto(STARTUP_SUB_SYSCTL);
++	kprintf("KB: after SYSCTL\n");
+ 
+ 	/*
+ 	 * Initialize the globals used for permuting kernel
+@@ -686,7 +688,9 @@ kernel_bootstrap_thread(void)
+ 
+ #ifdef  IOKIT
+ 	kernel_bootstrap_log("PE_init_iokit");
++	kprintf("KB: before IOKIT\n");
+ 	PE_init_iokit();
++	kprintf("KB: after IOKIT\n");
+ #endif
+ 
+ 	assert(ml_get_interrupts_enabled() == FALSE);
+@@ -695,18 +699,24 @@ kernel_bootstrap_thread(void)
+ 	 * Past this point, kernel subsystems that expect to operate with
+ 	 * interrupts or preemption enabled may begin enforcement.
+ 	 */
++	kprintf("KB: before EARLY_BOOT\n");
+ 	kernel_startup_initialize_upto(STARTUP_SUB_EARLY_BOOT);
++	kprintf("KB: after EARLY_BOOT\n");
+ 
+ #if SCHED_HYGIENE_DEBUG
+ 	// Reset interrupts masked timeout before we enable interrupts
+ 	ml_spin_debug_clear_self();
+ #endif
+-	(void) spllo();         /* Allow interruptions */
++	kprintf("KB: before spllo\n");
++	(void) spllo();
++	kprintf("KB: after spllo\n");         /* Allow interruptions */
+ 
+ 	/*
+ 	 * This will start displaying progress to the user, start as early as possible
+ 	 */
++	kprintf("KB: before screen\n");
+ 	initialize_screen(NULL, kPEAcquireScreen);
++	kprintf("KB: after screen\n");
+ 
+ 	/*
+ 	 *	Initialize the shared region module.
+@@ -753,11 +763,15 @@ kernel_bootstrap_thread(void)
+ 	 * the static KVA mappings used for the jettisoned bootstrap segments.
+ 	 */
+ 	kernel_bootstrap_log("OSKextRemoveKextBootstrap");
++	kprintf("KB: before kext_bootstrap\n");
+ 	OSKextRemoveKextBootstrap();
++	kprintf("KB: after kext_bootstrap\n");
+ 
+ 	/* No changes to kernel text and rodata beyond this point. */
+ 	kernel_bootstrap_log("machine_lockdown");
++	kprintf("KB: before lockdown\n");
+ 	machine_lockdown();
++	kprintf("KB: after lockdown\n");
+ 
+ #ifdef CONFIG_XNUPOST
+ 	kern_return_t result = kernel_list_tests();
+@@ -787,7 +801,9 @@ kernel_bootstrap_thread(void)
+ 	 *	Start the user bootstrap.
+ 	 */
+ #ifdef  MACH_BSD
++	kprintf("KB: before bsd_init\n");
+ 	bsd_init();
++	kprintf("KB: after bsd_init\n");
+ #endif
+ 
+ 

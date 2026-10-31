@@ -1,0 +1,18 @@
+diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
+index 889e92d..6b71762 100644
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -780,9 +780,13 @@ bsd_init(void)
+ 	kprintf("KB: after socketinit\n");
+ 	bsd_init_kprintf("calling domaininit\n");
+ 	kprintf("KB: before domaininit\n");
++#if !defined(SWEET)
+ 	domaininit();
++#endif
+ 	kprintf("KB: after domaininit\n");
++#if !defined(SWEET)
+ 	iptap_init();
++#endif
+ #if FLOW_DIVERT
+ 	flow_divert_init();
+ #endif  /* FLOW_DIVERT */

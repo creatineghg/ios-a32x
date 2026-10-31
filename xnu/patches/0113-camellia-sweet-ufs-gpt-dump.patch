@@ -1,0 +1,86 @@
+diff --git a/bsd/dev/sweet_ufs.c b/bsd/dev/sweet_ufs.c
+index ed88861..c6d0aea 100644
+--- a/bsd/dev/sweet_ufs.c
++++ b/bsd/dev/sweet_ufs.c
+@@ -306,6 +306,57 @@ ufs_sync_cache(void)
+ 	return ufs_scsi(cdb, sizeof(cdb), 0, false);
+ }
+ 
++/*
++ * CAMELLIA bring-up aid: print just enough of the GPT to plan where an iOS
++ * root volume could live - total LUN size (alt_lba), the last used LBA and the
++ * free tail after it.  LBAs are UFS_BLOCK (4 KiB) units; entry_lba is the
++ * table's own location and alt_lba the backup header's, i.e. the LUN's last
++ * block.
++ */
++static void
++ufs_dump_gpt(uint32_t nent, uint32_t esz, const uint8_t *entries,
++    uint64_t entry_lba, uint64_t first_usable, uint64_t last_usable,
++    uint64_t alt_lba)
++{
++	uint32_t used = 0;
++	uint64_t last_end = 0;
++	char last_name[37];
++
++	last_name[0] = 0;
++	for (uint32_t i = 0; i < nent; i++) {
++		const uint8_t *e = entries + i * esz;
++		char name[37];
++		unsigned c;
++		uint64_t last;
++
++		for (c = 0; c < 36; c++) {
++			uint16_t ch = (uint16_t)(e[56 + 2 * c] | e[57 + 2 * c] << 8);
++			if (ch == 0 || ch > 0x7f) {
++				break;
++			}
++			name[c] = (char)ch;
++		}
++		name[c] = 0;
++		if (!name[0]) {
++			continue;
++		}
++		used++;
++		memcpy(&last, e + 40, 8);
++		if (last >= last_end) {
++			last_end = last;
++			strlcpy(last_name, name, sizeof(last_name));
++		}
++	}
++	uint64_t tail = last_usable > last_end ? last_usable - last_end : 0;
++
++	printf("SWEET GPT: lun %u blk %u nent %u used %u entry_lba %llu "
++	    "first_usable %llu last_usable %llu alt_lba %llu\n",
++	    su.lun, UFS_BLOCK, nent, used, entry_lba,
++	    first_usable, last_usable, alt_lba);
++	printf("SWEET GPT: last part \"%s\" last_lba %llu tail_free %llu MiB "
++	    "(%llu blocks)\n", last_name, last_end, tail * UFS_BLOCK >> 20, tail);
++}
++
+ static int
+ ufs_find_partition(const char *want)
+ {
+@@ -318,11 +369,14 @@ ufs_find_partition(const char *want)
+ 		printf("SWEET UFS: LUN %u has no GPT\n", su.lun);
+ 		return ENXIO;
+ 	}
+-	uint64_t entry_lba;
++	uint64_t entry_lba, first_usable, last_usable, alt_lba;
+ 	uint32_t nent, esz;
+ 	memcpy(&entry_lba, b + 72, 8);
+ 	memcpy(&nent, b + 80, 4);
+ 	memcpy(&esz, b + 84, 4);
++	memcpy(&alt_lba, b + 32, 8);
++	memcpy(&first_usable, b + 40, 8);
++	memcpy(&last_usable, b + 48, 8);
+ 	if (esz != 128 || nent == 0 || nent * esz > BOUNCE_SIZE) {
+ 		printf("SWEET UFS: unsupported GPT entries %u x %u\n", nent, esz);
+ 		return ENXIO;
+@@ -331,6 +385,7 @@ ufs_find_partition(const char *want)
+ 	if (error) {
+ 		return error;
+ 	}
++	ufs_dump_gpt(nent, esz, b, entry_lba, first_usable, last_usable, alt_lba);
+ 	for (uint32_t i = 0; i < nent; i++) {
+ 		const uint8_t *e = b + i * esz;
+ 		char name[37];

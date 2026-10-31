@@ -1,0 +1,14 @@
+diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
+index d8399a7..7a50f54 100644
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -1152,7 +1152,9 @@ kern_return_t
+ bsd_autoconf(void)
+ {
+ 	kprintf("bsd_autoconf: calling kminit\n");
++#if !defined(SWEET)
+ 	kminit();
++#endif
+ 
+ 	/*
+ 	 * Early startup for bsd pseudodevices.

@@ -1,0 +1,14 @@
+diff --git a/osfmk/kern/startup.c b/osfmk/kern/startup.c
+index bec97fb..cbe9df1 100644
+--- a/osfmk/kern/startup.c
++++ b/osfmk/kern/startup.c
+@@ -770,7 +770,9 @@ kernel_bootstrap_thread(void)
+ 
+ #ifdef  IOKIT
+ 	kernel_bootstrap_log("PE_lockdown_iokit");
++#if !defined(SWEET)
+ 	PE_lockdown_iokit();
++#endif
+ #endif
+ 	/*
+ 	 * max_cpus must be nailed down by the time PE_lockdown_iokit() finishes,

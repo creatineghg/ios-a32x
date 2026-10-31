@@ -1,0 +1,47 @@
+diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
+index 6b71762..5e416e3 100644
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -789,18 +789,22 @@ bsd_init(void)
+ #endif
+ #if FLOW_DIVERT
+ 	flow_divert_init();
++	kprintf("KB: after flow_divert_init\n");
+ #endif  /* FLOW_DIVERT */
+ #endif /* SOCKETS */
+ #if SKYWALK
+ 	bsd_init_kprintf("calling skywalk_init\n");
+ 	(void) skywalk_init();
++	kprintf("KB: after skywalk_init\n");
+ #endif /* SKYWALK */
+ #if NETWORKING
+ #if NECP
+ 	/* Initialize Network Extension Control Policies */
+ 	necp_init();
++	kprintf("KB: after necp_init\n");
+ #endif
+ 	netagent_init();
++	kprintf("KB: after netagent_init\n");
+ #endif /* NETWORKING */
+ 
+ #if CONFIG_FREEZE
+@@ -810,16 +814,19 @@ bsd_init(void)
+ 	/* Initialise background freezing */
+ 	bsd_init_kprintf("calling memorystatus_freeze_init\n");
+ 	memorystatus_freeze_init();
++	kprintf("KB: after memorystatus_freeze_init\n");
+ #endif
+ 
+ #if CONFIG_MEMORYSTATUS
+ 	/* Initialize kernel memory status notifications */
+ 	bsd_init_kprintf("calling memorystatus_init\n");
+ 	memorystatus_init();
++	kprintf("KB: after memorystatus_init\n");
+ #endif /* CONFIG_MEMORYSTATUS */
+ 
+ 	bsd_init_kprintf("calling sysctl_mib_init\n");
+ 	sysctl_mib_init();
++	kprintf("KB: after sysctl_mib_init\n");
+ 
+ 	bsd_init_kprintf("calling bsd_autoconf\n");
+ 	kprintf("KB: before bsd_autoconf\n");

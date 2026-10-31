@@ -1,0 +1,15 @@
+diff --git a/bsd/net/dlil.c b/bsd/net/dlil.c
+index ddc5f41..6be3daa 100644
+--- a/bsd/net/dlil.c
++++ b/bsd/net/dlil.c
+@@ -2671,8 +2671,10 @@ dlil_init(void)
+ 	if_ports_used_init();
+ 
+ #if DEBUG || DEVELOPMENT
++#if !defined(SWEET)
+ 	/* Run self-tests */
+ 	dlil_verify_sum16();
++#endif
+ #endif /* DEBUG || DEVELOPMENT */
+ 
+ 	/*

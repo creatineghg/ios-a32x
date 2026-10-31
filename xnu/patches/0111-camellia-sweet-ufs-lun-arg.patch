@@ -1,0 +1,24 @@
+diff --git a/bsd/dev/sweet_ufs.c b/bsd/dev/sweet_ufs.c
+index 6b926fe..dc1f647 100644
+--- a/bsd/dev/sweet_ufs.c
++++ b/bsd/dev/sweet_ufs.c
+@@ -618,7 +618,18 @@ sweet_ufs_init(void)
+ 		return ENOMEM;
+ 	}
+ 	su.dma_pa = ptoa_64(pn);
+-	su.lun = 0;
++	/*
++	 * CAMELLIA (MT6833): the stock ABL/LK GPT lives on UFS LUN 2 (MIUI:
++	 * userdata is /dev/block/sdc59), not LUN 0 as on SWEET. 2 is the
++	 * default for this port and ufslun= overrides it.
++	 */
++	uint32_t lun = 2;
++	PE_parse_boot_argn("ufslun", &lun, sizeof(lun));
++	if (lun > 15) {
++		printf("SWEET UFS: ufslun=%u out of range, using 2\n", lun);
++		lun = 2;
++	}
++	su.lun = (uint8_t)lun;
+ 	su.secsize = DEV_BSIZE;
+ 
+ 	lck_mtx_lock(&sweet_ufs_lock);

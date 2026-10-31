@@ -1,0 +1,14 @@
+diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
+index 02e22f4..b67f331 100644
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -721,7 +721,9 @@ bsd_init(void)
+ 
+ 	/* Initialize mbuf's. */
+ 	bsd_init_kprintf("calling mbinit\n");
++#if !defined(SWEET)
+ 	mbinit();
++#endif
+ 	kprintf("KB: after mbinit\n");
+ 	restricted_in_port_init();
+ 	kprintf("KB: after restricted_in_port_init\n");

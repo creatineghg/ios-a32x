@@ -1,0 +1,118 @@
+diff --git a/bsd/dev/arm/systemcalls.c b/bsd/dev/arm/systemcalls.c
+index 7fd9be1..059674f 100644
+--- a/bsd/dev/arm/systemcalls.c
++++ b/bsd/dev/arm/systemcalls.c
+@@ -102,6 +102,17 @@ unix_syscall(
+ 
+ 	code = arm_get_syscall_number(state);
+ 
++#if defined(SWEET)
++	/* SWEET bring-up: name the syscall pid 1 blocks in. */
++	{
++		static int sweet_pid1_calls;
++		if (sweet_pid1_calls < 800 && proc_pid(proc) == 1) {
++			printf("SWEETPID1 syscall %u\n", (unsigned)code);
++			sweet_pid1_calls++;
++		}
++	}
++#endif
++
+ #define unix_syscall_kprintf(x...)      /* kprintf("unix_syscall: " x) */
+ 
+ 	if (kdebug_enable && !code_is_kdebug_trace(code)) {
+diff --git a/bsd/dev/sweet_ufs.c b/bsd/dev/sweet_ufs.c
+index 6b926fe..7854f85 100644
+--- a/bsd/dev/sweet_ufs.c
++++ b/bsd/dev/sweet_ufs.c
+@@ -413,6 +413,18 @@ sweet_ufs_strategy(buf_t bp)
+ 
+ 	bool rd = buf_flags(bp) & B_READ;
+ 
++#if defined(SWEET)
++	/* SWEET bring-up: show that block I/O is still flowing when launchd stops. */
++	{
++		static unsigned sweet_io_count;
++		if ((sweet_io_count & 31u) == 0) {
++			printf("SWEETIO %u %c off=0x%llx len=%u\n", sweet_io_count,
++			    rd ? 'R' : 'W', off, count);
++		}
++		sweet_io_count++;
++	}
++#endif
++
+ 	buf_setresid(bp, count);
+ 	if (!rd && !su.writable) {
+ 		error = EROFS;
+diff --git a/osfmk/vm/vm_shared_region.c b/osfmk/vm/vm_shared_region.c
+index db1d613..37db913 100644
+--- a/osfmk/vm/vm_shared_region.c
++++ b/osfmk/vm/vm_shared_region.c
+@@ -137,7 +137,12 @@
+ int shared_region_version = 3;
+ 
+ /* trace level, output is sent to the system log file */
+-int shared_region_trace_level = SHARED_REGION_TRACE_ERROR_LVL;
++int shared_region_trace_level =
++#if defined(SWEET)
++    SHARED_REGION_TRACE_INFO_LVL;       /* SWEET: show map()/slide progress */
++#else
++    SHARED_REGION_TRACE_ERROR_LVL;
++#endif
+ 
+ /* should local (non-chroot) shared regions persist when no task uses them ? */
+ int shared_region_persistence = 0;      /* no by default */
+@@ -1618,6 +1623,14 @@ vm_shared_region_map_file_setup(
+ 			 * Finally map the object into the shared region.
+ 			 */
+ 			target_address = (vm_map_offset_t)(mappings[0].sms_address - sr_base_address);
++#if defined(SWEET)
++			printf("SWEETSR: enter i=%u/%u addr=0x%llx size=0x%llx maxprot=0x%x%s\n",
++			    i, mappings_count,
++			    (long long)mappings[i].sms_address,
++			    (long long)mappings[i].sms_size,
++			    mappings[i].sms_max_prot,
++			    map_port == MACH_PORT_NULL ? " anon" : " file");
++#endif
+ 			vmk_flags = VM_MAP_KERNEL_FLAGS_FIXED();
+ 			vmk_flags.vmkf_already = TRUE;
+ 			vmk_flags.vmkf_no_copy_on_read = 1;
+@@ -1800,6 +1813,9 @@ vm_shared_region_map_file_setup(
+ 					VM_INHERIT_DEFAULT);
+ 			}
+ 
++#if defined(SWEET)
++			printf("SWEETSR: enter i=%u done kr=%d\n", i, kr);
++#endif
+ 			if (kr == KERN_SUCCESS) {
+ 				/*
+ 				 * Record the first successful mapping(s) in the shared
+@@ -1950,6 +1966,10 @@ vm_shared_region_map_file(
+ 	struct shared_file_mapping_slide_np **mappings_to_slide = NULL; /* [0..vmsr_num_slides] */
+ 	struct _sr_file_mappings *srfmp;
+ 
++#if defined(SWEET)
++	printf("SWEETSR: map_file enter files=%d\n", sr_file_mappings_count);
++#endif
++
+ 	/*
+ 	 * Figure out how many of the mappings have slides.
+ 	 */
+@@ -2049,9 +2069,18 @@ vm_shared_region_map_file(
+ 	assert(shared_region->sr_ref_count > 0);
+ 	assert(shared_region->sr_mapping_in_progress);
+ 
++#if defined(SWEET)
++	printf("SWEETSR: setup done, slides=%u\n", mappings_to_slide_cnt);
++#endif
+ 	vm_shared_region_map_file_final(shared_region, sr_map, sfm_min_address, sfm_max_address);
++#if defined(SWEET)
++	printf("SWEETSR: final done\n");
++#endif
+ 
+ done:
++#if defined(SWEET)
++	printf("SWEETSR: map_file exit kr=%d\n", kr);
++#endif
+ 	/*
+ 	 * We're done working on that shared region.
+ 	 * Wake up any waiting threads.

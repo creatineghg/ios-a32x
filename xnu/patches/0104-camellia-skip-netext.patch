@@ -1,0 +1,35 @@
+diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
+index 5e416e3..31b158b 100644
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -788,22 +788,30 @@ bsd_init(void)
+ 	iptap_init();
+ #endif
+ #if FLOW_DIVERT
++#if !defined(SWEET)
+ 	flow_divert_init();
++#endif
+ 	kprintf("KB: after flow_divert_init\n");
+ #endif  /* FLOW_DIVERT */
+ #endif /* SOCKETS */
+ #if SKYWALK
+ 	bsd_init_kprintf("calling skywalk_init\n");
++#if !defined(SWEET)
+ 	(void) skywalk_init();
++#endif
+ 	kprintf("KB: after skywalk_init\n");
+ #endif /* SKYWALK */
+ #if NETWORKING
+ #if NECP
+ 	/* Initialize Network Extension Control Policies */
++#if !defined(SWEET)
+ 	necp_init();
++#endif
+ 	kprintf("KB: after necp_init\n");
+ #endif
++#if !defined(SWEET)
+ 	netagent_init();
++#endif
+ 	kprintf("KB: after netagent_init\n");
+ #endif /* NETWORKING */
+ 

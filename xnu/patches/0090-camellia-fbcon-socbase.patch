@@ -1,0 +1,32 @@
+diff --git a/osfmk/arm64/sweet_early.c b/osfmk/arm64/sweet_early.c
+index 6928957..6d595e0 100644
+--- a/osfmk/arm64/sweet_early.c
++++ b/osfmk/arm64/sweet_early.c
+@@ -15,7 +15,7 @@ static volatile uint32_t *early_fb = (volatile uint32_t *)(uintptr_t)0x9c000000;
+ #define EARLY_FB early_fb
+ #define EARLY_WIDTH 1080u
+ #define EARLY_HEIGHT 2400u
+-#define EARLY_STRIDE (4320u / 4)
++#define EARLY_STRIDE (4352u / 4)
+ #define EARLY_SCALE 2u
+ #define EARLY_CELL_W (8u * EARLY_SCALE)
+ #define EARLY_CELL_H (16u * EARLY_SCALE)
+diff --git a/pexpert/arm/pe_serial.c b/pexpert/arm/pe_serial.c
+index 19f27cd..f9b78fa 100644
+--- a/pexpert/arm/pe_serial.c
++++ b/pexpert/arm/pe_serial.c
+@@ -917,7 +917,14 @@ serial_init(void)
+ 	soc_base = pe_arm_get_soc_base_phys();
+ 
+ 	if (soc_base == 0) {
++#if !defined(SWEET)
++		/*
++		 * The SWEET/CAMELLIA ADTs describe absolute MMIO addresses, so the
++		 * SoC range base is legitimately zero; keep going so the
++		 * sweet-fbcon node is probed and the kernel console works.
++		 */
+ 		return 0;
++#endif
+ 	}
+ 
+ 	PE_parse_boot_argn("disable-uart-irq", &disable_uart_irq, sizeof(disable_uart_irq));

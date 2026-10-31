@@ -1,0 +1,19 @@
+diff --git a/pexpert/arm/pe_identify_machine.c b/pexpert/arm/pe_identify_machine.c
+index aa75c0a..8f92fad 100644
+--- a/pexpert/arm/pe_identify_machine.c
++++ b/pexpert/arm/pe_identify_machine.c
+@@ -58,7 +58,14 @@ pe_identify_machine(boot_args * bootArgs)
+ 	(void)bootArgs;
+ 
+ 	if (pe_arm_get_soc_base_phys() == 0) {
++#if !defined(SWEET)
++		/*
++		 * The SWEET/CAMELLIA ADTs describe absolute MMIO addresses, so a
++		 * zero SoC range base is valid there; keep initializing the clock
++		 * frequency info from the /cpus timebase-frequency property.
++		 */
+ 		return;
++#endif
+ 	}
+ 
+ 	/* Clear the gPEClockFrequencyInfo struct */

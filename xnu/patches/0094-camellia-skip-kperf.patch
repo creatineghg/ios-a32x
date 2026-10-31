@@ -1,0 +1,15 @@
+diff --git a/osfmk/kern/startup.c b/osfmk/kern/startup.c
+index e042d6b..a841ad0 100644
+--- a/osfmk/kern/startup.c
++++ b/osfmk/kern/startup.c
+@@ -799,7 +799,10 @@ kernel_bootstrap_thread(void)
+ 
+ #if KPERF
+ 	kprintf("KB: before kperf\n");
++#if !defined(SWEET)
+ 	kperf_init_early();
++#endif
++
+ 	kprintf("KB: after kperf\n");
+ #endif
+ 

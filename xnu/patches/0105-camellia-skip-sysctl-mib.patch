@@ -1,0 +1,14 @@
+diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
+index 31b158b..d8399a7 100644
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -833,7 +833,9 @@ bsd_init(void)
+ #endif /* CONFIG_MEMORYSTATUS */
+ 
+ 	bsd_init_kprintf("calling sysctl_mib_init\n");
++#if !defined(SWEET)
+ 	sysctl_mib_init();
++#endif
+ 	kprintf("KB: after sysctl_mib_init\n");
+ 
+ 	bsd_init_kprintf("calling bsd_autoconf\n");

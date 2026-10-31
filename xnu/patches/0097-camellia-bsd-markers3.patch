@@ -1,0 +1,49 @@
+diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
+index 5dff7ca..eb8c736 100644
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -709,16 +709,20 @@ bsd_init(void)
+ 	/* Initial proc_uuid_policy subsystem */
+ 	bsd_init_kprintf("calling proc_uuid_policy_init()\n");
+ 	proc_uuid_policy_init();
++	kprintf("KB: after proc_uuid_policy_init\n");
+ #endif
+ 
+ #if SOCKETS
+ 	/* Initialize per-CPU cache allocator */
+ 	mcache_init();
++	kprintf("KB: after mcache_init\n");
+ 
+ 	/* Initialize mbuf's. */
+ 	bsd_init_kprintf("calling mbinit\n");
+ 	mbinit();
++	kprintf("KB: after mbinit\n");
+ 	restricted_in_port_init();
++	kprintf("KB: after restricted_in_port_init\n");
+ #endif /* SOCKETS */
+ 
+ 	/*
+@@ -728,19 +732,23 @@ bsd_init(void)
+ #if CONFIG_AUDIT
+ 	bsd_init_kprintf("calling audit_init\n");
+ 	audit_init();
++	kprintf("KB: after audit_init\n");
+ #endif
+ 
+ 	/* Initialize kqueues */
+ 	bsd_init_kprintf("calling knote_init\n");
+ 	knote_init();
++	kprintf("KB: after knote_init\n");
+ 
+ 	/* Initialize event handler */
+ 	bsd_init_kprintf("calling eventhandler_init\n");
+ 	eventhandler_init();
++	kprintf("KB: after eventhandler_init\n");
+ 
+ 	/* Initialize for async IO */
+ 	bsd_init_kprintf("calling aio_init\n");
+ 	aio_init();
++	kprintf("KB: after aio_init\n");
+ 
+ 	pthread_init();
+ 	kprintf("KB: after pthread_init\n");
