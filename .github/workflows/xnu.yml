@@ -47,6 +47,10 @@ jobs:
           git -C upstream checkout -q FETCH_HEAD
           cp upstream/xnu/patches/*.patch upstream/xnu/patches/*.sh dxb/patches/
           cp xnu/patches/*.patch dxb/patches/
+          # Upstream stage scripts bail out unless MACHINE_CONFIG is SWEET; the
+          # camellia kernel needs the same staged sources (bearssl, hfs, pthread).
+          sed -i '' 's/\[\[ "${MACHINE_CONFIG:-}" == SWEET \]\] || exit 0/[[ "${MACHINE_CONFIG:-}" == SWEET || "${MACHINE_CONFIG:-}" == CAMELLIA ]] || exit 0/' dxb/patches/*.sh
+          grep -h 'MACHINE_CONFIG' dxb/patches/*.sh
           # libfirehose_kernel is built arm64e-only; this kernel is plain arm64
           sed -i '' 's/ARCHS="x86_64 arm64e" VALID_ARCHS="x86_64 arm64e"/ARCHS="x86_64 arm64e arm64" VALID_ARCHS="x86_64 arm64e arm64"/' dxb/build.sh
           grep -c 'VALID_ARCHS="x86_64 arm64e arm64"' dxb/build.sh
