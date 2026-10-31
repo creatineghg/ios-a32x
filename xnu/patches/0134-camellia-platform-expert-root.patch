@@ -1,0 +1,34 @@
+diff --git a/iokit/Kernel/arm/SweetPlatformExpert.cpp b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+--- a/iokit/Kernel/arm/SweetPlatformExpert.cpp
++++ b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+@@ -25,11 +25,30 @@
+ bool
+ SweetPlatformExpert::start(IOService *provider)
+ {
+ 	IOLog("SWEET: starting device-tree platform expert\n");
+ 	if (!IODTPlatformExpert::start(provider)) {
+ 		return false;
+ 	}
++#if defined(SWEET)
++	/*
++	 * On SWEET the root IOPlatformExpertDevice never attaches, so this
++	 * expert has no parent chain to the registry root.  Everything under
++	 * it then fails registerService() with "not registry member":
++	 * IOResources, and every driver matching IOProviderClass=IOResources
++	 * (IOWatchdog, IOCoreSurfaceRoot, AppleKeyStore, SweetHID...).
++	 * Anchor the expert directly to the registry root and retry the
++	 * resource registration.
++	 */
++	if (getParentEntry(gIOServicePlane) == NULL) {
++		IOLog("SWEET IOK: platform expert has no parent, attaching to registry root\n");
++		attachToParent(getRegistryRoot(), gIOServicePlane);
++	}
++	{
++		extern void sweet_iokit_late_init(void);
++		sweet_iokit_late_init();
++	}
++#endif
+ 	registerService();
+ 	IOLog("SWEET: platform expert registered\n");
+ 	return true;
+ }
