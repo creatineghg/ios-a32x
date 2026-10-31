@@ -3,7 +3,7 @@ diff --git a/iokit/Kernel/IOService.cpp b/iokit/Kernel/IOService.cpp
 +++ b/iokit/Kernel/IOService.cpp
 @@ -240,3 +240,5 @@
  static IOService *              gIOResources;
-+extern "C" char                 sweet_term_name[64];
++extern "C" char                 sweet_term_name[64] = "";
 +
  static IOService *              gIOUserResources;
  static IOService *              gIOServiceRoot;
