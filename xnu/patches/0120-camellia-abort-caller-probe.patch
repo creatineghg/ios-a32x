@@ -1,0 +1,33 @@
+diff --git a/osfmk/arm64/sleh.c b/osfmk/arm64/sleh.c
+--- a/osfmk/arm64/sleh.c
++++ b/osfmk/arm64/sleh.c
+@@ -1631,7 +1631,29 @@
+ 	} else {
+ 		kprintf("Unclassified kernel abort (fault_code=0x%x)\n", fault_code);
+ 	}
+ 
++#if defined(SWEET)
++	/*
++	 * SWEET bring-up: a tiny far means a NULL object was dereferenced at a
++	 * member offset.  The faulting function's caller is in the frame record,
++	 * which is the only way to name the call site on a screen-only device.
++	 */
++	if (fault_addr < 0x10000) {
++		uint64_t fp = saved_state64(state)->fp;
++		uint64_t caller = 0;
++		uintptr_t ksb = round_page(thread->machine.kstackptr) -
++		    KERNEL_STACK_SIZE;
++
++		if ((fp & 7) == 0 && fp >= ksb &&
++		    fp + 8 < ksb + KERNEL_STACK_SIZE) {
++			caller = *(uint64_t *)(fp + 8);
++		}
++		panic("SWEET: data abort far=0x%llx pc=0x%llx caller_lr=0x%llx",
++		    (uint64_t)fault_addr, (uint64_t)get_saved_state_pc(state),
++		    caller);
++	}
++#endif
++
+ 	panic_with_thread_kernel_state("Kernel data abort.", state);
+ }
+ 
