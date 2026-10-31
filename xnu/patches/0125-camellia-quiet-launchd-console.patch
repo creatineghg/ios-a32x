@@ -1,0 +1,46 @@
+diff --git a/bsd/dev/arm/cons.c b/bsd/dev/arm/cons.c
+--- a/bsd/dev/arm/cons.c
++++ b/bsd/dev/arm/cons.c
+@@ -15,9 +15,12 @@
+ #include <sys/param.h>
+ #include <sys/systm.h>
+ #include <sys/conf.h>
+ #include <sys/ioctl.h>
+ #include <sys/tty.h>
+ #include <sys/proc.h>
+ #include <sys/uio.h>
++#if defined(SWEET)
++#include <pexpert/pexpert.h>
++#endif
+ 
+ struct tty      *constty;               /* current console device */
+@@ -75,6 +78,29 @@
+ int
+ cnwrite(__unused dev_t dev, struct uio *uio, int ioflag)
+ {
++#if defined(SWEET)
++	struct proc *p = current_proc();
++
++	/*
++	 * SWEET bring-up: launchd's os_log fallback writes every job event to
++	 * /dev/console, which buries the kernel probes on a screen-only device.
++	 * sweetconsole_nolaunchd=1 drops only launchd's own console writes;
++	 * the kernel still reports crashes (SWEET: ... panic suppressed) and
++	 * panics are printed through the kernel console path, not this one.
++	 */
++	if (p != NULL && proc_getpid(p) == 1) {
++		static int sweet_nolaunchd = -1;
++		if (sweet_nolaunchd < 0) {
++			uint32_t v = 0;
++			PE_parse_boot_argn("sweetconsole_nolaunchd", &v, sizeof(v));
++			sweet_nolaunchd = (v != 0);
++		}
++		if (sweet_nolaunchd) {
++			uio_setresid(uio, 0);
++			return 0;
++		}
++	}
++#endif
+ 	dev = cndev();
+ 	return (*cdevsw[major(dev)].d_write)(dev, uio, ioflag);
+ }
