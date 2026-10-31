@@ -1,0 +1,34 @@
+diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -183,4 +183,19 @@
+ OSDefineMetaClassAndStructors(IOMobileFramebufferUserClient, IOUserClient);
+ 
++extern "C" IOService *
++sweet_display_create(IOService *provider)
++{
++	AppleCLCD *fb = new AppleCLCD;
++
++	if (fb == NULL) {
++		return NULL;
++	}
++	if (!fb->init() || !fb->attach(provider) || !fb->start(provider)) {
++		fb->release();
++		return NULL;
++	}
++	return fb;
++}
++
+ bool
+ AppleCLCD::start(IOService *provider)
+diff --git a/iokit/Kernel/arm/SweetPlatformExpert.cpp b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+--- a/iokit/Kernel/arm/SweetPlatformExpert.cpp
++++ b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+@@ -108,2 +108,7 @@
+ 		sweet_dt_nubs = m;
++		{
++			extern "C" IOService *sweet_display_create(IOService *);
++			IOService *fb = sweet_display_create(this);
++			IOLog("SWEET DT: manual AppleCLCD=%p\n", fb);
++		}
+ 		armio->release();
