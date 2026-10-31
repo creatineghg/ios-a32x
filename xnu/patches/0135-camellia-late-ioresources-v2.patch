@@ -23,18 +23,18 @@ diff --git a/iokit/Kernel/IOService.cpp b/iokit/Kernel/IOService.cpp
 +	IORegistryEntry *resp;
 +
 +	IOLog("SWEET IOK: late root=%p svcroot=%p sfroot=%p res=%p resp=%p plat=%p\n",
-+	    getRegistryRoot(), gIOServiceRoot, getServiceRoot(), gIOResources,
++	    IORegistryEntry::getRegistryRoot(), gIOServiceRoot, IOService::getServiceRoot(), gIOResources,
 +	    gIOResources ? gIOResources->getParentEntry(gIOServicePlane) : NULL,
 +	    gIOPlatform);
 +	if (gIOResources == NULL) {
 +		return;
 +	}
 +	resp = gIOResources->getParentEntry(gIOServicePlane);
-+	if (resp != NULL && resp != getRegistryRoot()) {
++	if (resp != NULL && resp != IORegistryEntry::getRegistryRoot()) {
 +		IOLog("SWEET IOK: detaching IOResources from %p\n", resp);
 +		gIOResources->detachAll(gIOServicePlane);
 +	}
-+	root = getRegistryRoot();
++	root = IORegistryEntry::getRegistryRoot();
 +	IOLog("SWEET IOK: attach IOResources to root=%p -> %d\n",
 +	    root, gIOResources->attachToParent(root, gIOServicePlane));
 +	gIOResources->registerService();
