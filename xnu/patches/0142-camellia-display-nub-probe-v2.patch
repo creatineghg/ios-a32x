@@ -1,0 +1,36 @@
+diff --git a/iokit/Kernel/arm/SweetPlatformExpert.cpp b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+--- a/iokit/Kernel/arm/SweetPlatformExpert.cpp
++++ b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+@@ -70,5 +70,32 @@
+ 	IORegistryEntry *armio = root->childFromPath("arm-io", gIODTPlane);
+ 	if (armio != NULL) {
++		OSIterator *it = armio->getChildIterator(gIODTPlane);
++		int n = 0;
++
++		if (it != NULL) {
++			IORegistryEntry *c;
++
++			while ((c = (IORegistryEntry *)it->getNextObject()) != NULL) {
++				OSData *comp = (OSData *)c->getProperty("compatible");
++				if (n < 12) {
++					IOLog("SWEET DT: arm-io child %s compat=%s\n",
++					    c->getName(),
++					    comp ? (const char *)comp->getBytesNoCopy() : "?");
++				}
++				n++;
++			}
++			it->release();
++		}
++		IOLog("SWEET DT: arm-io children=%d\n", n);
+ 		createNubs(this, IODTFindMatchingEntries(armio, kIODTExclusive, "('gic')"));
++		OSIterator *si = getChildIterator(gIOServicePlane);
++		int m = 0;
++		if (si != NULL) {
++			while (si->getNextObject() != NULL) {
++				m++;
++			}
++			si->release();
++		}
++		IOLog("SWEET DT: platform nubs=%d\n", m);
+ 		armio->release();
+ 	}
