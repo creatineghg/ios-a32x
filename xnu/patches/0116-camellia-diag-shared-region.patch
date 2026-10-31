@@ -1,17 +1,25 @@
 diff --git a/bsd/dev/arm/systemcalls.c b/bsd/dev/arm/systemcalls.c
-index 7fd9be1..059674f 100644
+index 7fd9be1..5b97d8e 100644
 --- a/bsd/dev/arm/systemcalls.c
 +++ b/bsd/dev/arm/systemcalls.c
-@@ -102,6 +102,17 @@ unix_syscall(
+@@ -102,6 +102,25 @@ unix_syscall(
  
  	code = arm_get_syscall_number(state);
  
 +#if defined(SWEET)
-+	/* SWEET bring-up: name the syscall pid 1 blocks in. */
++	/*
++	 * SWEET bring-up: entry+return trace for pid 1.  A "syscall N" line
++	 * without a matching "ret N" names the call that never returns; the
++	 * cap marker tells a capped trace apart from a hang.
++	 */
 +	{
 +		static int sweet_pid1_calls;
-+		if (sweet_pid1_calls < 800 && proc_pid(proc) == 1) {
-+			printf("SWEETPID1 syscall %u\n", (unsigned)code);
++		if (proc_pid(proc) == 1) {
++			if (sweet_pid1_calls < 1000) {
++				printf("SWEETPID1 syscall %u\n", (unsigned)code);
++			} else if (sweet_pid1_calls == 1000) {
++				printf("SWEETPID1 trace cap reached\n");
++			}
 +			sweet_pid1_calls++;
 +		}
 +	}
@@ -20,16 +28,32 @@ index 7fd9be1..059674f 100644
  #define unix_syscall_kprintf(x...)      /* kprintf("unix_syscall: " x) */
  
  	if (kdebug_enable && !code_is_kdebug_trace(code)) {
+@@ -179,6 +198,16 @@ unix_syscall(
+ 
+ 	AUDIT_SYSCALL_ENTER(code, proc, uthread);
+ 	error = (*(callp->sy_call))(proc, &uthread->uu_arg[0], &(uthread->uu_rval[0]));
++
++#if defined(SWEET)
++	{
++		static int sweet_pid1_rets;
++		if (proc_pid(proc) == 1 && sweet_pid1_rets < 1000) {
++			printf("SWEETPID1 ret %u %d\n", (unsigned)code, error);
++			sweet_pid1_rets++;
++		}
++	}
++#endif
+ 	AUDIT_SYSCALL_EXIT(code, proc, uthread, error);
+ 
+ #if CONFIG_MACF
 diff --git a/bsd/dev/sweet_ufs.c b/bsd/dev/sweet_ufs.c
-index 6b926fe..7854f85 100644
+index 6b926fe..c96c20f 100644
 --- a/bsd/dev/sweet_ufs.c
 +++ b/bsd/dev/sweet_ufs.c
-@@ -413,6 +413,18 @@ sweet_ufs_strategy(buf_t bp)
+@@ -413,6 +413,17 @@ sweet_ufs_strategy(buf_t bp)
  
  	bool rd = buf_flags(bp) & B_READ;
  
 +#if defined(SWEET)
-+	/* SWEET bring-up: show that block I/O is still flowing when launchd stops. */
 +	{
 +		static unsigned sweet_io_count;
 +		if ((sweet_io_count & 31u) == 0) {
