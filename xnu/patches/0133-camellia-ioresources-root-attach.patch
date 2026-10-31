@@ -1,0 +1,27 @@
+diff --git a/iokit/Kernel/IOService.cpp b/iokit/Kernel/IOService.cpp
+--- a/iokit/Kernel/IOService.cpp
++++ b/iokit/Kernel/IOService.cpp
+@@ -1070,5 +1070,12 @@
+ 	while (parent && (parent != root)) {
+ 		parent = parent->getParentEntry( gIOServicePlane);
+ 	}
+ 
++#if defined(SWEET)
++	if (this == gIOResources) {
++		IOLog("SWEET IOK: regIS this=%p root=%p parent=%p svcroot=%p resp=%p\n",
++		    this, root, parent, gIOServiceRoot,
++		    getParentEntry(gIOServicePlane));
++	}
++#endif
+ 	if (parent != root) {
+@@ -946,3 +953,10 @@
+ 	root = gIOServiceRoot ? gIOServiceRoot :
+ 	    (gIOPlatform ? (IORegistryEntry *)gIOPlatform : getRegistryRoot());
++	if (gIOResources->getParentEntry(gIOServicePlane) != NULL &&
++	    gIOResources->getParentEntry(gIOServicePlane) != getRegistryRoot()) {
++		IOLog("SWEET IOK: detach IOResources from %p\n",
++		    gIOResources->getParentEntry(gIOServicePlane));
++		gIOResources->detachAll(gIOServicePlane);
++	}
++	root = getRegistryRoot();
+ 	if (gIOResources->getParentEntry(gIOServicePlane) == NULL) {
