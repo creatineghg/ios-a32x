@@ -1,0 +1,33 @@
+diff --git a/iokit/Kernel/arm/SweetWatchdog.cpp b/iokit/Kernel/arm/SweetWatchdog.cpp
+--- a/iokit/Kernel/arm/SweetWatchdog.cpp
++++ b/iokit/Kernel/arm/SweetWatchdog.cpp
+@@ -68,6 +68,6 @@
+ IOReturn
+ IOWatchdogUserClient::clientClose(void)
+ {
+-	terminate();
++	IOLog("SWEET: IOWatchdog user client closed (terminate skipped)\n");
+ 	return kIOReturnSuccess;
+ }
+diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -475,3 +475,2 @@
+ 	}
+-	terminate();
+ 	return kIOReturnSuccess;
+diff --git a/iokit/Kernel/arm/SweetSurface.cpp b/iokit/Kernel/arm/SweetSurface.cpp
+--- a/iokit/Kernel/arm/SweetSurface.cpp
++++ b/iokit/Kernel/arm/SweetSurface.cpp
+@@ -474,3 +474,2 @@
+ 	IOLockUnlock(fLock);
+-	terminate();
+ 	return kIOReturnSuccess;
+diff --git a/iokit/Kernel/arm/hid/IOHIDEventServiceUserClient.cpp b/iokit/Kernel/arm/hid/IOHIDEventServiceUserClient.cpp
+--- a/iokit/Kernel/arm/hid/IOHIDEventServiceUserClient.cpp
++++ b/iokit/Kernel/arm/hid/IOHIDEventServiceUserClient.cpp
+@@ -103,4 +103,3 @@
+ {
+-    terminate();
+     
+     return kIOReturnSuccess;
