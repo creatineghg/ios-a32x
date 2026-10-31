@@ -1,0 +1,208 @@
+diff --git a/bsd/kern/kern_shutdown.c b/bsd/kern/kern_shutdown.c
+--- a/bsd/kern/kern_shutdown.c
++++ b/bsd/kern/kern_shutdown.c
+@@ -68,5 +68,9 @@
+ #include <libkern/OSAtomic.h>
+ #include <IOKit/IOPlatformExpert.h>
+ #include <IOKit/IOMessage.h>
+ 
++#if defined(SWEET)
++#include <pexpert/pexpert.h>
++#endif
++
+ #include <sys/kdebug.h>
+@@ -182,5 +186,43 @@
+ 	if ((howto & (RB_PANIC | RB_QUICK)) == (RB_PANIC | RB_QUICK)) {
+ 		panic_kernel(howto, message);
+ 	}
+ 
++#if defined(SWEET)
++	/*
++	 * SWEET bring-up: record who asked for the system to go down.  This is
++	 * the only copy of that information on a screen-only device, and it
++	 * separates a daemon failing its own startup from the boot logic.
++	 */
++	{
++		proc_t self = current_proc();
++
++		printf("SWEET: reboot(howto=0x%x) pid=%d comm=%s msg=%s\n",
++		    howto, self != NULL ? proc_pid(self) : 0,
++		    self != NULL ? self->p_comm : "kernel",
++		    message != NULL ? message : "-");
++	}
++
++	/*
++	 * SWEET cannot reset the SoC (nothing sets PE_halt_restart), so a real
++	 * reboot would kill every process and then spin in halt_all_cpus().
++	 * With sweetnoreboot=1 keep the kernel alive instead: the request is
++	 * still logged and the heartbeat/process-table probes keep running,
++	 * which is what this bring-up needs to observe.  Off by default.
++	 */
++	{
++		static int sweet_noreboot_logs;
++		uint32_t sweet_noreboot = 0;
++
++		if (PE_parse_boot_argn("sweetnoreboot", &sweet_noreboot,
++		    sizeof(sweet_noreboot)) && sweet_noreboot != 0) {
++			if (sweet_noreboot_logs < 8) {
++				sweet_noreboot_logs++;
++				printf("SWEET: reboot suppressed by sweetnoreboot=1 (%d)\n",
++				    sweet_noreboot_logs);
++			}
++			return 0;
++		}
++	}
++#endif
++
+ 	if (!OSCompareAndSwap(0, 1, &system_inshutdown)) {
+@@ -190,23 +232,35 @@
+ 		return EBUSY;
+ 	}
+ 
+-	lck_mtx_lock(&vm_swap_data_lock);
+-
+-	/* Turn OFF future swapfile reclaimation / compaction etc.*/
+-	compressor_store_stop_compaction = TRUE;
+-
+-	/* wait for any current swapfile work to end */
+-	while (vm_swapfile_create_thread_running || vm_swapfile_gc_thread_running) {
+-		assert_wait((event_t)&compressor_store_stop_compaction, THREAD_UNINT);
+-
+-		lck_mtx_unlock(&vm_swap_data_lock);
+-
+-		thread_block(THREAD_CONTINUE_NULL);
+-
+-		lck_mtx_lock(&vm_swap_data_lock);
+-	}
+-
+-	lck_mtx_unlock(&vm_swap_data_lock);
++#if defined(SWEET)
++	/*
++	 * vm_swap_data_lock is the first lock reboot_kernel() takes, but this
++	 * bring-up never creates swap files: the lock is only declared with
++	 * LCK_MTX_DECLARE, and touching it here is exactly what faulted in W9
++	 * (lck_mtx_lock, far=0, pid 11 keybagd).  We are going down anyway,
++	 * so drain nothing and leave the lock alone.
++	 */
++	printf("SWEET: swap drain skipped\n");
++	compressor_store_stop_compaction = TRUE;
++#else
++	lck_mtx_lock(&vm_swap_data_lock);
++
++	/* Turn OFF future swapfile reclaimation / compaction etc.*/
++	compressor_store_stop_compaction = TRUE;
++
++	/* wait for any current swapfile work to end */
++	while (vm_swapfile_create_thread_running || vm_swapfile_gc_thread_running) {
++		assert_wait((event_t)&compressor_store_stop_compaction, THREAD_UNINT);
++
++		lck_mtx_unlock(&vm_swap_data_lock);
++
++		thread_block(THREAD_CONTINUE_NULL);
++
++		lck_mtx_lock(&vm_swap_data_lock);
++	}
++
++	lck_mtx_unlock(&vm_swap_data_lock);
++#endif
+ 
+ 	/*
+ 	 * Notify the power management root domain that the system will shut down.
+diff --git a/bsd/dev/sweet_sample.c b/bsd/dev/sweet_sample.c
+--- a/bsd/dev/sweet_sample.c
++++ b/bsd/dev/sweet_sample.c
+@@ -59,6 +59,63 @@
+ 	}
+ 	return PROC_RETURNED;
+ }
+ 
++/*
++ * SWEET process-table probe: one compact line on the manual console, so that
++ * "launchd reached N daemons" is visible on the screen and daemon churn can be
++ * followed.  Names are snapshotted under proc_list_lock and printed after it
++ * is dropped: kprintf() can block on the console and must not run while the
++ * process list is held.
++ */
++#define SWEET_PROCS_SHOWN 12
++
++struct sweet_proc_snap {
++	int pid;
++	char comm[MAXCOMLEN + 1];
++};
++
++void
++sweet_procs_print(void)
++{
++	struct sweet_proc_snap snap[SWEET_PROCS_SHOWN];
++	int shown = 0, total = 0;
++	proc_t p;
++
++	proc_list_lock();
++	ALLPROC_FOREACH(p) {
++		if (p->p_stat == SIDL) {
++			continue;       /* still forking: no name yet */
++		}
++		total++;
++		if (shown < SWEET_PROCS_SHOWN) {
++			snap[shown].pid = proc_pid(p);
++			strlcpy(snap[shown].comm, p->p_comm,
++			    sizeof(snap[shown].comm));
++			shown++;
++		}
++	}
++	proc_list_unlock();
++
++	printf("SWEET: procs=%d [", total);
++	for (int i = 0; i < shown; i++) {
++		printf("%s%d:%s", i != 0 ? " " : "", snap[i].pid, snap[i].comm);
++	}
++	if (total > shown) {
++		printf(" +%d", total - shown);
++	}
++	printf("]\n");
++}
++
++static void
++sweet_procs_thread(__unused void *arg, __unused wait_result_t wr)
++{
++	static int chan;
++	(void)tsleep(&chan, PZERO, "sweetprc", 30 * hz);
++	for (;;) {
++		sweet_procs_print();
++		(void)tsleep(&chan, PZERO, "sweetprc", 60 * hz);
++	}
++}
++
+ static void
+ sweet_sample_thread(__unused void *arg, __unused wait_result_t wr)
+@@ -81,8 +138,12 @@
+ void
+ sweet_sample_start(void)
+ {
+ 	thread_t thread;
++
+ 	if (kernel_thread_start(sweet_sample_thread, NULL, &thread) == KERN_SUCCESS) {
+ 		thread_deallocate(thread);
+ 	}
++	if (kernel_thread_start(sweet_procs_thread, NULL, &thread) == KERN_SUCCESS) {
++		thread_deallocate(thread);
++	}
+ }
+diff --git a/osfmk/vm/vm_compressor_backing_store.c b/osfmk/vm/vm_compressor_backing_store.c
+--- a/osfmk/vm/vm_compressor_backing_store.c
++++ b/osfmk/vm/vm_compressor_backing_store.c
+@@ -517,5 +517,14 @@
+ 	    TASK_POLICY_INTERNAL, TASK_POLICY_PASSIVE_IO, TASK_POLICY_ENABLE);
+ 
+ 	vm_swap_enabled = 1;
++#if defined(SWEET)
++	/*
++	 * SWEET: report the lock group id.  vm_swap_data_lock is only usable if
++	 * the LOCKS startup phase initialised its group; 0 means it never ran,
++	 * which is what W9 needs to confirm on the next boot.
++	 */
++	printf("SWEET: vm_swap_data_lock grp_id=%u (0 = never initialised)\n",
++	    vm_swap_data_lock.lck_mtx_grp);
++#endif
+ 	printf("VM Swap Subsystem is ON\n");
+ }
