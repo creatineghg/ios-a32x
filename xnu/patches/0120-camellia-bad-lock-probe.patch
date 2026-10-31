@@ -1,0 +1,22 @@
+diff --git a/osfmk/kern/lock_mtx.c b/osfmk/kern/lock_mtx.c
+--- a/osfmk/kern/lock_mtx.c
++++ b/osfmk/kern/lock_mtx.c
+@@ -1030,6 +1030,18 @@
+ void
+ lck_mtx_lock(lck_mtx_t *lock)
+ {
++#if defined(SWEET)
++	uintptr_t sweet_lr = (uintptr_t)__builtin_return_address(0);
++
++	/*
++	 * SWEET bring-up: a bogus (tiny) mutex pointer means a NULL object was
++	 * dereferenced at a member offset; without this the CAS in the fastpath
++	 * only shows a data abort on a screen-only device.  Name the caller.
++	 */
++	if (__improbable((uintptr_t)lock < 0x10000)) {
++		panic("SWEET: bad lck_mtx_lock %p lr %p", lock, (void *)sweet_lr);
++	}
++#endif
+ 	lck_mtx_lock_fastpath(lock, LCK_MTX_MODE_SLEEPABLE);
+ }
+ 
