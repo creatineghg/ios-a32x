@@ -1,0 +1,8 @@
+diff --git a/iokit/Kernel/arm/SweetPlatformExpert.cpp b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+--- a/iokit/Kernel/arm/SweetPlatformExpert.cpp
++++ b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+@@ -166,3 +166,3 @@
+ 	{
+-		bool iok = pe->init(root);
++		bool iok = pe->init();
+ 		bool aok = iok && pe->attach(root);
