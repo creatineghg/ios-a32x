@@ -1,0 +1,34 @@
+diff --git a/iokit/Kernel/arm/SweetPlatformExpert.cpp b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+--- a/iokit/Kernel/arm/SweetPlatformExpert.cpp
++++ b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+@@ -28,4 +28,5 @@
+ extern "C" int sweet_dt_called = 0;
+ extern IOService *sweet_display_create(IOService *);
++extern "C" int sweet_display_state;
+ 
+ bool
+@@ -34,13 +35,17 @@
+ 	IOLog("SWEET: starting device-tree platform expert\n");
+-	if (!IODTPlatformExpert::start(provider)) {
+-		return false;
+-	}
++	bool ok;
++
++	ok = IODTPlatformExpert::start(provider);
++	IOLog("SWEET: IODTPlatformExpert::start -> %d\n", ok);
++	{
++		IOService *fb = sweet_display_create(this);
++		IOLog("SWEET FB: PE-start AppleCLCD create=%p disp=%d\n", fb, sweet_display_state);
++	}
++	if (!ok) {
++		return false;
++	}
+ 	if (!sweet_dt_called) {
+ 		IOLog("SWEET DT: superclass did not call processTopLevel, calling it now\n");
+ 		processTopLevel(provider);
+ 	}
+-	{
+-		IOService *fb = sweet_display_create(this);
+-		IOLog("SWEET FB: early AppleCLCD create=%p\n", fb);
+-	}
+ 	registerService();
