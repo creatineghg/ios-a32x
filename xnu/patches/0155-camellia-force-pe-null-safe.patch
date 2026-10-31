@@ -1,0 +1,10 @@
+diff --git a/iokit/Kernel/arm/SweetPlatformExpert.cpp b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+--- a/iokit/Kernel/arm/SweetPlatformExpert.cpp
++++ b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+@@ -144,4 +144,5 @@
+ 	if (root == NULL) {
+-		root = (IOService *)IORegistryEntry::getRegistryRoot();
++		IOLog("SWEET: force PE no root nub\n");
++		return;
+ 	}
+ 	IOLog("SWEET: force PE root=%p platform=%p\n", root, IOService::getPlatform());
