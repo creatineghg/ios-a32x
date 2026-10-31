@@ -1,0 +1,27 @@
+diff --git a/iokit/Kernel/arm/SweetPlatformExpert.cpp b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+index 0631685..7310b7c 100644
+--- a/iokit/Kernel/arm/SweetPlatformExpert.cpp
++++ b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+@@ -9,6 +9,7 @@
+ #include <IOKit/IOPlatformExpert.h>
+ #include <IOKit/IODeviceTreeSupport.h>
+ #include <IOKit/IOLib.h>
++#include <machine/machine_routines.h>
+ 
+ class SweetPlatformExpert : public IODTPlatformExpert {
+ 	OSDeclareDefaultStructors(SweetPlatformExpert);
+@@ -30,6 +31,14 @@ SweetPlatformExpert::start(IOService *provider)
+ 		return false;
+ 	}
+ 	registerService();
++	/*
++	 * SWEET only runs the boot CPU: publish the max-CPU count here so that
++	 * ml_wait_max_cpus() (reached from workq_open/libdispatch in launchd)
++	 * returns instead of sleeping on a flag nobody would ever set.  Without
++	 * this launchd hangs in syscall 367 (workq_open) before starting jobs.
++	 */
++	ml_set_max_cpus(1);
++	IOLog("SWEET: max cpus published (1)\n");
+ 	IOLog("SWEET: platform expert registered\n");
+ 	return true;
+ }
