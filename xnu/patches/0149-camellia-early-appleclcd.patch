@@ -1,0 +1,21 @@
+diff --git a/iokit/Kernel/arm/SweetPlatformExpert.cpp b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+--- a/iokit/Kernel/arm/SweetPlatformExpert.cpp
++++ b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+@@ -25,6 +25,7 @@
+ extern "C" int sweet_dt_children = -1;
+ extern "C" int sweet_dt_nubs = -1;
+ extern "C" int sweet_dt_disp = -1;
+ extern "C" int sweet_dt_called = 0;
++extern IOService *sweet_display_create(IOService *);
+ 
+ bool
+@@ -37,5 +38,9 @@
+ 	if (!sweet_dt_called) {
+ 		IOLog("SWEET DT: superclass did not call processTopLevel, calling it now\n");
+ 		processTopLevel(provider);
+ 	}
++	{
++		IOService *fb = sweet_display_create(this);
++		IOLog("SWEET FB: early AppleCLCD create=%p\n", fb);
++	}
+ 	registerService();
