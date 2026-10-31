@@ -45,18 +45,77 @@ index 6b926fe..7e673c5 100644
  	/* Input drivers (HID services in iokit/Kernel/arm/hid/SweetHID.cpp). */
  	sweet_keys_init();
 diff --git a/bsd/kern/kern_exec.c b/bsd/kern/kern_exec.c
-index 68612db..add0db7 100644
+index 68612db..3abea80 100644
 --- a/bsd/kern/kern_exec.c
 +++ b/bsd/kern/kern_exec.c
-@@ -922,6 +922,11 @@ set_proc_name(struct image_params *imgp, proc_t p)
+@@ -922,6 +922,10 @@ set_proc_name(struct image_params *imgp, proc_t p)
  	    (unsigned)imgp->ip_ndp->ni_cnd.cn_namelen);
  	p->p_comm[imgp->ip_ndp->ni_cnd.cn_namelen] = '\0';
  
 +#if defined(SWEET)
-+	/* SWEET bring-up: every successful exec, so we can see launchd spawn jobs. */
 +	printf("SWEETEXEC %d %s\n", proc_pid(p), p->p_comm);
 +#endif
 +
  #if DEVELOPMENT || DEBUG
  	/*
  	 * This happens during image activation, so the crash behavior flags from
+diff --git a/bsd/pthread/pthread_workqueue.c b/bsd/pthread/pthread_workqueue.c
+index 0fc2bce..636edc8 100644
+--- a/bsd/pthread/pthread_workqueue.c
++++ b/bsd/pthread/pthread_workqueue.c
+@@ -2032,10 +2032,20 @@ workq_open(struct proc *p, __unused struct workq_open_args *uap,
+ 	struct workqueue *wq;
+ 	int error = 0;
+ 
++#if defined(SWEET)
++	if (proc_pid(p) == 1) {
++		printf("SWQW enter lflag 0x%x\n", p->p_lflag);
++	}
++#endif
+ 	if ((p->p_lflag & P_LREGISTER) == 0) {
+ 		return EINVAL;
+ 	}
+ 
++#if defined(SWEET)
++	if (proc_pid(p) == 1) {
++		printf("SWQW registered, limits=%d\n", wq_init_constrained_limit);
++	}
++#endif
+ 	if (wq_init_constrained_limit) {
+ 		uint32_t limit, num_cpus = ml_wait_max_cpus();
+ 
+@@ -2069,12 +2079,22 @@ workq_open(struct proc *p, __unused struct workq_open_args *uap,
+ 		wq_init_constrained_limit = 0;
+ 	}
+ 
++#if defined(SWEET)
++	if (proc_pid(p) == 1) {
++		printf("SWQW limits done, wqptr=%p\n", proc_get_wqptr(p));
++	}
++#endif
+ 	if (proc_get_wqptr(p) == NULL) {
+ 		if (proc_init_wqptr_or_wait(p) == FALSE) {
+ 			assert(proc_get_wqptr(p) != NULL);
+ 			goto out;
+ 		}
+ 
++#if defined(SWEET)
++		if (proc_pid(p) == 1) {
++			printf("SWQW allocating wq\n");
++		}
++#endif
+ 		wq = zalloc_flags(workq_zone_workqueue, Z_WAITOK | Z_ZERO);
+ 
+ 		os_ref_init_count(&wq->wq_refcnt, &workq_refgrp, 1);
+@@ -2119,6 +2139,11 @@ workq_open(struct proc *p, __unused struct workq_open_args *uap,
+ 		proc_set_wqptr(p, wq);
+ 	}
+ out:
++#if defined(SWEET)
++	if (proc_pid(p) == 1) {
++		printf("SWQW out err=%d wqptr=%p\n", error, proc_get_wqptr(p));
++	}
++#endif
+ 
+ 	return error;
+ }
