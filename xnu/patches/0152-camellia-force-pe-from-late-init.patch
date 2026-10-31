@@ -1,0 +1,57 @@
+diff --git a/iokit/Kernel/IOService.cpp b/iokit/Kernel/IOService.cpp
+--- a/iokit/Kernel/IOService.cpp
++++ b/iokit/Kernel/IOService.cpp
+@@ -928,5 +928,9 @@
+ 	IOLog("SWEET IOK: late root=%p svcroot=%p sfroot=%p res=%p resp=%p plat=%p\n",
+ 	    IORegistryEntry::getRegistryRoot(), gIOServiceRoot, IOService::getServiceRoot(), gIOResources,
+ 	    gIOResources ? gIOResources->getParentEntry(gIOServicePlane) : NULL,
+ 	    gIOPlatform);
++	{
++		extern void sweet_force_platform_expert(void);
++		sweet_force_platform_expert();
++	}
+ 	if (gIOResources == NULL) {
+diff --git a/iokit/Kernel/arm/SweetPlatformExpert.cpp b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+--- a/iokit/Kernel/arm/SweetPlatformExpert.cpp
++++ b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+@@ -129,6 +129,40 @@
+ /*
+  * hw.target / hw.product come from IODTPlatformExpert: the first root
+  * "compatible" string and "model" (D22AP / iPhone10,3 in the ADT), which
+  * is what the iPhone userland (MobileGestalt) expects.
+  */
++extern "C" void
++sweet_force_platform_expert(void)
++{
++	IOService *root = IOService::getServiceRoot();
++	IOService *pe;
++
++	if (root == NULL) {
++		root = (IOService *)IORegistryEntry::getRegistryRoot();
++	}
++	IOLog("SWEET: force PE root=%p platform=%p\n", root, IOService::getPlatform());
++	if (IOService::getPlatform() != NULL) {
++		return;
++	}
++	pe = (IOService *)OSMetaClass::allocClassWithName("SweetPlatformExpert");
++	IOLog("SWEET: force PE alloc=%p\n", pe);
++	if (pe == NULL || root == NULL) {
++		return;
++	}
++	{
++		bool iok = pe->init(root);
++		bool aok = iok && pe->attach(root);
++		bool sok = aok && pe->start(root);
++		IOLog("SWEET: force PE init=%d attach=%d start=%d dt=%d\n",
++		    iok, aok, sok, sweet_dt_children);
++		if (!sok) {
++			pe->release();
++		}
++	}
++	{
++		IOService *fb = sweet_display_create(root);
++		IOLog("SWEET FB: ufs AppleCLCD=%p disp=%d\n", fb, sweet_display_state);
++	}
++}
++
+ #endif /* SWEET */
