@@ -1,0 +1,35 @@
+diff --git a/iokit/IOKit/IOMapper.h b/iokit/IOKit/IOMapper.h
+--- a/iokit/IOKit/IOMapper.h
++++ b/iokit/IOKit/IOMapper.h
+@@ -95,7 +95,19 @@
+ 	static void
+ 	checkForSystemMapper()
+ 	{
++#if defined(SWEET)
++		/*
++		 * SWEET has no IOMMU driver: nobody will ever publish a system
++		 * mapper, and mbinit calls IOMapperIOVMAlloc before the platform
++		 * expert has started, so waiting here hangs the boot.  Physical ==
++		 * DMA address on this platform; callers fall back to ml_phys_*.
++		 */
++		if ((uintptr_t) gSystem & kWaitMask) {
++			gSystem = (IOMapper *) kNoMapper;
++		}
++#else
+ 		if ((uintptr_t) gSystem & kWaitMask) {
+ 			waitForSystemMapper();
+ 		}
++#endif
+ 	}
+diff --git a/iokit/Kernel/IOMapper.cpp b/iokit/Kernel/IOMapper.cpp
+--- a/iokit/Kernel/IOMapper.cpp
++++ b/iokit/Kernel/IOMapper.cpp
+@@ -142,4 +142,8 @@
+ void
+ IOMapper::setMapperRequired(bool hasMapper)
+ {
++#if defined(SWEET)
++	/* SWEET has no IOMMU: never wait for a system mapper that will not come. */
++	hasMapper = false;
++#endif
+ 	if (hasMapper) {
