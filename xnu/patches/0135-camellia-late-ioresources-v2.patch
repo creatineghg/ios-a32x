@@ -1,0 +1,60 @@
+diff --git a/iokit/Kernel/IOService.cpp b/iokit/Kernel/IOService.cpp
+--- a/iokit/Kernel/IOService.cpp
++++ b/iokit/Kernel/IOService.cpp
+@@ -911,8 +911,43 @@
+ IOService *
+ IOService::getServiceRoot( void )
+ {
+ 	return gIOServiceRoot;
+ }
+ 
++#if defined(SWEET)
++/*
++ * Runs at mountroot, after IOKitStart.  On SWEET the platform expert and
++ * its IOResources child are not members of the registry root, so every
++ * registerService() from setPlatform() fails with "not registry member".
++ * Re-attach the resource service to the registry root here and register it,
++ * then the config-table drivers can match.
++ */
++extern "C" void
++sweet_iokit_late_init(void)
++{
++	IORegistryEntry *root;
++	IORegistryEntry *resp;
++
++	IOLog("SWEET IOK: late root=%p svcroot=%p sfroot=%p res=%p resp=%p plat=%p\n",
++	    getRegistryRoot(), gIOServiceRoot, getServiceRoot(), gIOResources,
++	    gIOResources ? gIOResources->getParentEntry(gIOServicePlane) : NULL,
++	    gIOPlatform);
++	if (gIOResources == NULL) {
++		return;
++	}
++	resp = gIOResources->getParentEntry(gIOServicePlane);
++	if (resp != NULL && resp != getRegistryRoot()) {
++		IOLog("SWEET IOK: detaching IOResources from %p\n", resp);
++		gIOResources->detachAll(gIOServicePlane);
++	}
++	root = getRegistryRoot();
++	IOLog("SWEET IOK: attach IOResources to root=%p -> %d\n",
++	    root, gIOResources->attachToParent(root, gIOServicePlane));
++	gIOResources->registerService();
++	IOLog("SWEET IOK: after register resp=%p\n",
++	    gIOResources->getParentEntry(gIOServicePlane));
++}
++#endif
++
+ void
+ IOService::detach( IOService * provider )
+diff --git a/bsd/dev/sweet_ufs.c b/bsd/dev/sweet_ufs.c
+--- a/bsd/dev/sweet_ufs.c
++++ b/bsd/dev/sweet_ufs.c
+@@ -694,3 +694,9 @@
+ 	sweet_sample_start();
++#if defined(SWEET)
++	{
++		extern void sweet_iokit_late_init(void);
++		sweet_iokit_late_init();
++	}
++#endif
+ 	/* Input drivers (HID services in iokit/Kernel/arm/hid/SweetHID.cpp). */
+ 	sweet_keys_init();
