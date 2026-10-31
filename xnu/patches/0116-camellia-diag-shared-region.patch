@@ -37,16 +37,19 @@ index 7fd9be1..3d3c5b5 100644
  
  	if (kdebug_enable && !code_is_kdebug_trace(code)) {
 diff --git a/bsd/dev/sweet_ufs.c b/bsd/dev/sweet_ufs.c
-index 6b926fe..feeffda 100644
+index 6b926fe..da0eee5 100644
 --- a/bsd/dev/sweet_ufs.c
 +++ b/bsd/dev/sweet_ufs.c
-@@ -49,6 +49,37 @@ extern kern_return_t kernel_thread_start(thread_continue_t, void *, thread_t *);
+@@ -49,6 +49,41 @@ extern kern_return_t kernel_thread_start(thread_continue_t, void *, thread_t *);
  extern void thread_deallocate(thread_t);
  extern int hz;
  static void sweet_log_start(void);
 +
 +#if defined(SWEET)
 +unsigned sweet_io_total;
++unsigned sweet_ufs_err_total;
++int sweet_ufs_err_cmd = -1;
++int sweet_ufs_err_code;
 +extern unsigned sweet_syscall_count;
 +extern int sweet_last_syscall;
 +extern unsigned sweet_fault_count;
@@ -61,8 +64,9 @@ index 6b926fe..feeffda 100644
 +		assert_wait_deadline_with_leeway((event_t)&sweet_hb_thread, THREAD_UNINT,
 +		    TIMEOUT_URGENCY_SYS_CRITICAL, deadline, 0);
 +		thread_block(THREAD_CONTINUE_NULL);
-+		printf("SWEET: hb syscalls=%u last=%d faults=%u io=%u\n",
-+		    sweet_syscall_count, sweet_last_syscall, sweet_fault_count, sweet_io_total);
++		printf("SWEET: hb syscalls=%u last=%d faults=%u io=%u ufserr=%u\n",
++		    sweet_syscall_count, sweet_last_syscall, sweet_fault_count, sweet_io_total,
++		    sweet_ufs_err_total);
 +	}
 +}
 +
@@ -78,7 +82,31 @@ index 6b926fe..feeffda 100644
  extern void sweet_sample_start(void);
  extern void sweet_keys_init(void);
  extern void sweet_touch_init(void);
-@@ -413,6 +444,18 @@ sweet_ufs_strategy(buf_t bp)
+@@ -220,7 +255,10 @@ ufs_scsi(const uint8_t *cdb, unsigned cdb_len, uint32_t len, bool write)
+ 		uint64_t now = mach_absolute_time();
+ 		if (now > deadline) {
+ 			ufs_wr(REG_UTRLCLR, ~1u);
+-			printf("SWEET UFS: command 0x%02x timed out\n", cdb[0]);
++			/* no printf here: sweet_ufs_lock is held (console lock vs UFS lock) */
++			sweet_ufs_err_total++;
++			sweet_ufs_err_cmd = cdb[0];
++			sweet_ufs_err_code = ETIMEDOUT;
+ 			return ETIMEDOUT;
+ 		}
+ 		if (sleepable && now >= spin_until) {
+@@ -249,8 +287,9 @@ ufs_scsi(const uint8_t *cdb, unsigned cdb_len, uint32_t len, bool write)
+ 
+ 	uint32_t ocs = utrd->dw2 & 0xff;
+ 	if (ocs || ucd->resp[0] != 0x21 || ucd->resp[6] || ucd->resp[7]) {
+-		printf("SWEET UFS: command 0x%02x failed: ocs 0x%x upiu 0x%x response 0x%x status 0x%x\n",
+-		    cdb[0], ocs, ucd->resp[0], ucd->resp[6], ucd->resp[7]);
++		sweet_ufs_err_total++;
++		sweet_ufs_err_cmd = cdb[0];
++		sweet_ufs_err_code = EIO;
+ 		return EIO;
+ 	}
+ 	return 0;
+@@ -413,6 +452,18 @@ sweet_ufs_strategy(buf_t bp)
  
  	bool rd = buf_flags(bp) & B_READ;
  
@@ -97,7 +125,20 @@ index 6b926fe..feeffda 100644
  	buf_setresid(bp, count);
  	if (!rd && !su.writable) {
  		error = EROFS;
-@@ -655,6 +698,9 @@ sweet_ufs_init(void)
+@@ -460,6 +511,12 @@ sweet_ufs_strategy(buf_t bp)
+ 		buf_setresid(bp, count - done);
+ 	}
+ 	lck_mtx_unlock(&sweet_ufs_lock);
++#if defined(SWEET)
++	if (error) {
++		printf("SWEETUFS err=%d lastcmd=0x%x total=%u\n",
++		    error, sweet_ufs_err_cmd, sweet_ufs_err_total);
++	}
++#endif
+ 	buf_unmap(bp);
+ 
+ done:
+@@ -655,6 +712,9 @@ sweet_ufs_init(void)
  	    want, su.lun, su.first_block, su.nblocks * UFS_BLOCK >> 20,
  	    su.writable ? "read-write" : "read-only", su.dma_pa);
  	sweet_log_start();
