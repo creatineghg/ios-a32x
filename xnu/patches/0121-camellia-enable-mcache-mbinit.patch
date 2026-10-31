@@ -1,0 +1,19 @@
+diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -715,15 +715,11 @@
+ #if SOCKETS
+ 	/* Initialize per-CPU cache allocator */
+-#if !defined(SWEET)
+ 	mcache_init();
+-#endif
+ 	kprintf("KB: after mcache_init\n");
+ 
+ 	/* Initialize mbuf's. */
+ 	bsd_init_kprintf("calling mbinit\n");
+-#if !defined(SWEET)
+ 	mbinit();
+-#endif
+ 	kprintf("KB: after mbinit\n");
+ 	restricted_in_port_init();
+ 	kprintf("KB: after restricted_in_port_init\n");
