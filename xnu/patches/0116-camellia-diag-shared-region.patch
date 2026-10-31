@@ -142,7 +142,7 @@ index fbb0b28..136efe5 100644
  
  	if (uap->newlen > SIZE_T_MAX) {
 diff --git a/osfmk/vm/vm_fault.c b/osfmk/vm/vm_fault.c
-index 3e2a5f7..3eb338e 100644
+index 3e2a5f7..c86de9f 100644
 --- a/osfmk/vm/vm_fault.c
 +++ b/osfmk/vm/vm_fault.c
 @@ -4064,6 +4064,20 @@ vm_fault_internal(
@@ -153,7 +153,7 @@ index 3e2a5f7..3eb338e 100644
 +	{
 +		extern unsigned sweet_fault_count;
 +		proc_t sweet_p = current_proc();
-+		if (sweet_p != PROC_NULL && proc_pid(sweet_p) == 1) {
++		if (sweet_p != NULL && proc_pid(sweet_p) == 1) {
 +			sweet_fault_count++;
 +			if ((sweet_fault_count & 63u) == 0) {
 +				printf("SWEETFLT %u va=0x%llx prot=0x%x\n",
