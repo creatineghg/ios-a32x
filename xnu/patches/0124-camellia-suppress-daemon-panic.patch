@@ -1,0 +1,33 @@
+diff --git a/bsd/kern/kern_exit.c b/bsd/kern/kern_exit.c
+--- a/bsd/kern/kern_exit.c
++++ b/bsd/kern/kern_exit.c
+@@ -1666,4 +1666,29 @@
+ static bool
+ proc_should_trigger_panic(proc_t p, int rv)
+ {
++#if defined(SWEET)
++	/*
++	 * SWEET bring-up: daemons still crash while the platform pieces they
++	 * need are missing (watchdogd first).  Keep launchd fatal, but let
++	 * every other process exit/log instead of panicking the machine.
++	 * sweetpanic_on_crash=1 restores the stock behaviour.
++	 */
++	if (p != initproc) {
++		static int sweet_panic_on_crash = -1;
++		if (sweet_panic_on_crash < 0) {
++			uint32_t sweet_poc = 0;
++			PE_parse_boot_argn("sweetpanic_on_crash", &sweet_poc, sizeof(sweet_poc));
++			sweet_panic_on_crash = (sweet_poc != 0);
++		}
++		if (!sweet_panic_on_crash) {
++			if (p->p_exit_reason != OS_REASON_NULL) {
++				printf("SWEET: %s[%d] ns %d code 0x%llx -- panic suppressed\n",
++				    p->p_name, proc_getpid(p),
++				    p->p_exit_reason->osr_namespace,
++				    p->p_exit_reason->osr_code);
++			}
++			return false;
++		}
++	}
++#endif
+ 	if (p == initproc || (p->p_crash_behavior & POSIX_SPAWN_PANIC_ON_EXIT) != 0) {
