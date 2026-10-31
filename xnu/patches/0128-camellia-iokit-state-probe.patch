@@ -1,0 +1,73 @@
+diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -85,4 +85,34 @@
+ /* 0 = not started, 1 = running, <0 = failed stage (see AppleCLCD::start). */
+ extern "C" int sweet_display_state = 0;
+ 
++/*
++ * Diagnostic: number of services of a class currently in the registry, so
++ * the heartbeat can show whether IOResources/IOWatchdog/IOMobileFramebuffer
++ * actually matched.
++ */
++extern "C" int
++sweet_iokit_count(const char *cls)
++{
++	OSDictionary *match;
++	OSIterator *it;
++	int n = 0;
++
++	if (IOService::getServiceRoot() == NULL) {
++		return -2;      /* IOKit not up yet */
++	}
++	match = IOService::serviceMatching(cls);
++	if (match == NULL) {
++		return -1;
++	}
++	it = IOService::getMatchingServices(match);
++	if (it != NULL) {
++		while (it->getNextObject() != NULL) {
++			n++;
++		}
++		it->release();
++	}
++	match->release();
++	return n;
++}
++
+ class IOMobileFramebuffer : public IOService {
+diff --git a/iokit/Kernel/IOService.cpp b/iokit/Kernel/IOService.cpp
+--- a/iokit/Kernel/IOService.cpp
++++ b/iokit/Kernel/IOService.cpp
+@@ -1563,7 +1563,13 @@
+ 	gIOPlatform = platform;
+ 	gIOResources->attachToParent( gIOServiceRoot, gIOServicePlane );
+ 
+ 	gIOUserResources->attachToParent( gIOServiceRoot, gIOServicePlane );
+ 
++#if defined(SWEET)
++	IOLog("SWEET IOK: root=%p svcroot=%p res_parent=%p svcroot_parent=%p\n",
++	    getRegistryRoot(), gIOServiceRoot,
++	    gIOResources->getParentEntry(gIOServicePlane),
++	    gIOServiceRoot ? gIOServiceRoot->getParentEntry(gIOServicePlane) : NULL);
++#endif
+ #if defined(SWEET)
+ 	/*
+diff --git a/bsd/dev/sweet_ufs.c b/bsd/dev/sweet_ufs.c
+--- a/bsd/dev/sweet_ufs.c
++++ b/bsd/dev/sweet_ufs.c
+@@ -63,3 +63,7 @@
+ 		thread_block(THREAD_CONTINUE_NULL);
+-		printf("SWEET: hb\n");
++		printf("SWEET: hb disp=%d res=%d wdt=%d iomfb=%d\n",
++		    sweet_display_state,
++		    sweet_iokit_count("IOResources"),
++		    sweet_iokit_count("IOWatchdog"),
++		    sweet_iokit_count("IOMobileFramebuffer"));
+ 	}
+@@ -77,3 +81,5 @@
+ extern void sweet_sample_start(void);
++extern int sweet_display_state;
++extern int sweet_iokit_count(const char *);
+ extern void sweet_keys_init(void);
+ extern void sweet_touch_init(void);
