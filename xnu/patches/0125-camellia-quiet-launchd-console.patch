@@ -28,7 +28,7 @@ diff --git a/bsd/dev/arm/cons.c b/bsd/dev/arm/cons.c
 +	 * the kernel still reports crashes (SWEET: ... panic suppressed) and
 +	 * panics are printed through the kernel console path, not this one.
 +	 */
-+	if (p != NULL && proc_getpid(p) == 1) {
++	if (p != NULL && proc_pid(p) == 1) {
 +		static int sweet_nolaunchd = -1;
 +		if (sweet_nolaunchd < 0) {
 +			uint32_t v = 0;
