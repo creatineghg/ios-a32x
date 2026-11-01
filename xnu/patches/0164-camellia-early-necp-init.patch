@@ -1,0 +1,12 @@
+diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -774,7 +774,6 @@
+ #if NETWORKING
+-#if NECP
+ 	/* Initialize Network Extension Control Policies */
++	bsd_init_kprintf("SWEET: early necp_init\n");
+ 	necp_init();
+-#endif
+ 	netagent_init();
+ #endif /* NETWORKING */
