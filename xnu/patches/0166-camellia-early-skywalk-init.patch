@@ -1,0 +1,15 @@
+diff --git a/bsd/dev/sweet_ufs.c b/bsd/dev/sweet_ufs.c
+--- a/bsd/dev/sweet_ufs.c
++++ b/bsd/dev/sweet_ufs.c
+@@ -704,6 +704,11 @@
+ 	{
+ 		extern void necp_init(void);
+ 		printf("SWEET: early necp_init\n");
+ 		necp_init();
+ 	}
++	{
++		extern int skywalk_init(void);
++		printf("SWEET: early skywalk_init\n");
++		skywalk_init();
++	}
+ 	/* Input drivers (HID services in iokit/Kernel/arm/hid/SweetHID.cpp). */
