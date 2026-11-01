@@ -1,0 +1,76 @@
+diff --git a/iokit/Kernel/arm/hid/SweetHID.cpp b/iokit/Kernel/arm/hid/SweetHID.cpp
+--- a/iokit/Kernel/arm/hid/SweetHID.cpp
++++ b/iokit/Kernel/arm/hid/SweetHID.cpp
+@@ -562,31 +562,46 @@
++extern "C" int sweet_hid_stage = 0;
++
+ extern "C" void
+ sweet_force_hid(IOService *provider)
+ {
+ 	IOService *hid;
++	bool iok, aok, sok;
+ 
+ 	if (provider == NULL) {
++		sweet_hid_stage = -10;
+ 		return;
+ 	}
++	sweet_hid_stage = 1;
+ 	hid = (IOService *)OSMetaClass::allocClassWithName("SweetHIDButtons");
+ 	IOLog("SWEET HID: force buttons alloc=%p\n", hid);
+-	if (hid != NULL) {
+-		bool iok = hid->init();
+-		bool aok = iok && hid->attach(provider);
+-		bool sok = aok && hid->start(provider);
++	if (hid == NULL) {
++		sweet_hid_stage = -1;
++	} else {
++		iok = hid->init();
++		aok = iok && hid->attach(provider);
++		sok = aok && hid->start(provider);
+ 		IOLog("SWEET HID: force buttons init=%d attach=%d start=%d\n", iok, aok, sok);
+ 		if (!sok) {
++			sweet_hid_stage = -2;
+ 			hid->release();
++		} else {
++			sweet_hid_stage = 2;
+ 		}
+ 	}
+ 	hid = (IOService *)OSMetaClass::allocClassWithName("SweetHIDTouch");
+ 	IOLog("SWEET HID: force touch alloc=%p\n", hid);
+-	if (hid != NULL) {
+-		bool iok = hid->init();
+-		bool aok = iok && hid->attach(provider);
+-		bool sok = aok && hid->start(provider);
++	if (hid == NULL) {
++		sweet_hid_stage = -3;
++	} else {
++		iok = hid->init();
++		aok = iok && hid->attach(provider);
++		sok = aok && hid->start(provider);
+ 		IOLog("SWEET HID: force touch init=%d attach=%d start=%d\n", iok, aok, sok);
+ 		if (!sok) {
++			sweet_hid_stage = -4;
+ 			hid->release();
++		} else {
++			sweet_hid_stage = 4;
+ 		}
+ 	}
+ }
+diff --git a/bsd/dev/sweet_ufs.c b/bsd/dev/sweet_ufs.c
+--- a/bsd/dev/sweet_ufs.c
++++ b/bsd/dev/sweet_ufs.c
+@@ -66,11 +66,12 @@
+ 		int res = sweet_iokit_count("IOResources");
+ 		int wdt = sweet_iokit_count("IOWatchdog");
+ 		int iomfb = sweet_iokit_count("IOMobileFramebuffer");
+ 		int hid = sweet_iokit_count("IOHIDEventService");
+ 		extern int sweet_dt_children, sweet_dt_nubs, sweet_dt_disp;
+ 		extern int sweet_disp_stage;
++ 		extern int sweet_hid_stage;
+ 		for (int i = 0; i < 16; i++) {
+- 			printf("SWEET: hb disp=%d res=%d wdt=%d iomfb=%d dt=%d nubs=%d d0=%d cs=%d hid=%d\n",
++ 			printf("SWEET: hb disp=%d res=%d wdt=%d iomfb=%d dt=%d nubs=%d d0=%d cs=%d hid=%d hs=%d\n",
+ 			    sweet_display_state, res, wdt, iomfb,
+- 			    sweet_dt_children, sweet_dt_nubs, sweet_dt_disp, sweet_disp_stage, hid);
++ 			    sweet_dt_children, sweet_dt_nubs, sweet_dt_disp, sweet_disp_stage, hid, sweet_hid_stage);
+ 		}
