@@ -1,0 +1,9 @@
+diff --git a/iokit/Kernel/arm/hid/SweetHID.cpp b/iokit/Kernel/arm/hid/SweetHID.cpp
+--- a/iokit/Kernel/arm/hid/SweetHID.cpp
++++ b/iokit/Kernel/arm/hid/SweetHID.cpp
+@@ -570,4 +570,4 @@
+ 	for (;;) {
+ 		IOLog("SWEET STALL: alive\n");
+-		IOSleep(5000);
++		panic("SUPERVISOR-PC-1");
+ 	}
