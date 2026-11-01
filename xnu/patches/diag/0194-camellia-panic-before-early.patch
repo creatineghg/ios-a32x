@@ -1,0 +1,10 @@
+diff --git a/osfmk/kern/debug.c b/osfmk/kern/debug.c
+--- a/osfmk/kern/debug.c
++++ b/osfmk/kern/debug.c
+@@ -1076,2 +1076,6 @@
+ 	/* No CPU/thread/debugger state is required for this first panic copy. */
++	printf("\nSWEET PANIC SPIN: %s\n", panic_format_str);
++	for (;;) {
++		__asm__ __volatile__("wfe" ::: "memory");
++	}
+ 	sweet_early_panic(panic_format_str, panic_args);
