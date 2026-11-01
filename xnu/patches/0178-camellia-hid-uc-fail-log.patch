@@ -1,0 +1,15 @@
+diff --git a/iokit/Kernel/arm/hid/SweetHID.cpp b/iokit/Kernel/arm/hid/SweetHID.cpp
+--- a/iokit/Kernel/arm/hid/SweetHID.cpp
++++ b/iokit/Kernel/arm/hid/SweetHID.cpp
+@@ -310,9 +310,11 @@
+ 	}
+ 	if (!client->attach(this)) {
++		IOLog("SWEET HID: %s user client attach failed\n", getName());
+ 		client->release();
+ 		return kIOReturnUnsupported;
+ 	}
+ 	if (!client->start(this)) {
++		IOLog("SWEET HID: %s user client start failed\n", getName());
+ 		client->detach(this);
+ 		client->release();
+ 		return kIOReturnUnsupported;
