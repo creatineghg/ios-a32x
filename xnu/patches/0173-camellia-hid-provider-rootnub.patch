@@ -1,0 +1,9 @@
+diff --git a/iokit/Kernel/IOService.cpp b/iokit/Kernel/IOService.cpp
+--- a/iokit/Kernel/IOService.cpp
++++ b/iokit/Kernel/IOService.cpp
+@@ -951,4 +951,4 @@
+ 	{
+ 		extern void sweet_force_hid(IOService *);
+-		sweet_force_hid(gIOResources);
++		sweet_force_hid(IOService::getServiceRoot());
+ 	}
