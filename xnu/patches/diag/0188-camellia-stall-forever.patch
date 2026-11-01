@@ -1,0 +1,14 @@
+diff --git a/iokit/Kernel/arm/hid/SweetHID.cpp b/iokit/Kernel/arm/hid/SweetHID.cpp
+--- a/iokit/Kernel/arm/hid/SweetHID.cpp
++++ b/iokit/Kernel/arm/hid/SweetHID.cpp
+@@ -563,5 +563,9 @@
+ 	ml_phys_write_word(0x10007000UL, 0);
+ 	ml_phys_write_word(0x10007008UL, 0);
+-	IOLog("SWEET WDT: toprgu mode/restart cleared\n");
++	IOLog("SWEET WDT: toprgu cleared, stalling forever\n");
++	for (;;) {
++		IOLog("SWEET STALL: alive\n");
++		IOSleep(5000);
++	}
+ 	IOService *hid;
+ 
