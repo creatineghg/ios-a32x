@@ -1,0 +1,60 @@
+diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -623,2 +623,43 @@
+ }
++
++class IOAcceleratorES : public IOService {
++	OSDeclareDefaultStructors(IOAcceleratorES);
++public:
++	bool start(IOService *provider) APPLE_KEXT_OVERRIDE;
++};
++OSDefineMetaClassAndStructors(IOAcceleratorES, IOService);
++
++bool
++IOAcceleratorES::start(IOService *provider)
++{
++	if (!IOService::start(provider)) {
++		return false;
++	}
++	setProperty("IOUserClientClass", "IOAcceleratorESUserClient");
++	IOLog("SWEET GPU: IOAcceleratorES started\n");
++	registerService();
++	return true;
++}
++
++extern "C" void
++sweet_force_gpu(IOService *provider)
++{
++	IOService *gpu;
++
++	if (provider == NULL) {
++		return;
++	}
++	gpu = (IOService *)OSMetaClass::allocClassWithName("IOAcceleratorES");
++	IOLog("SWEET GPU: alloc=%p\n", gpu);
++	if (gpu != NULL) {
++		bool iok = gpu->init();
++		bool aok = iok && gpu->attach(provider);
++		bool sok = aok && gpu->start(provider);
++		IOLog("SWEET GPU: init=%d attach=%d start=%d\n", iok, aok, sok);
++		if (!sok) {
++			gpu->release();
++		}
++	}
++}
++
+ #endif /* SWEET */
+diff --git a/iokit/Kernel/arm/hid/SweetHID.cpp b/iokit/Kernel/arm/hid/SweetHID.cpp
+--- a/iokit/Kernel/arm/hid/SweetHID.cpp
++++ b/iokit/Kernel/arm/hid/SweetHID.cpp
+@@ -596,5 +596,9 @@
+ 		if (!sok) {
+ 			hid->release();
+ 		}
+ 	}
++	{
++		extern void sweet_force_gpu(IOService *);
++		sweet_force_gpu(provider);
++	}
+ }
