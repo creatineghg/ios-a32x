@@ -1,0 +1,54 @@
+diff --git a/iokit/Kernel/arm/hid/SweetHID.cpp b/iokit/Kernel/arm/hid/SweetHID.cpp
+--- a/iokit/Kernel/arm/hid/SweetHID.cpp
++++ b/iokit/Kernel/arm/hid/SweetHID.cpp
+@@ -555,7 +555,39 @@
+ extern "C" void
+ sweet_hid_touch(int finger, int down, int x, int y)
+ {
+ 	if (gSweetTouch) {
+ 		gSweetTouch->touch(finger, down != 0, x, y);
+ 	}
+ }
++
++void
++sweet_force_hid(IOService *provider)
++{
++	IOService *hid;
++
++	if (provider == NULL) {
++		return;
++	}
++	hid = (IOService *)OSMetaClass::allocClassWithName("SweetHIDButtons");
++	IOLog("SWEET HID: force buttons alloc=%p\n", hid);
++	if (hid != NULL) {
++		bool iok = hid->init();
++		bool aok = iok && hid->attach(provider);
++		bool sok = aok && hid->start(provider);
++		IOLog("SWEET HID: force buttons init=%d attach=%d start=%d\n", iok, aok, sok);
++		if (!sok) {
++			hid->release();
++		}
++	}
++	hid = (IOService *)OSMetaClass::allocClassWithName("SweetHIDTouch");
++	IOLog("SWEET HID: force touch alloc=%p\n", hid);
++	if (hid != NULL) {
++		bool iok = hid->init();
++		bool aok = iok && hid->attach(provider);
++		bool sok = aok && hid->start(provider);
++		IOLog("SWEET HID: force touch init=%d attach=%d start=%d\n", iok, aok, sok);
++		if (!sok) {
++			hid->release();
++		}
++	}
++}
+diff --git a/iokit/Kernel/IOService.cpp b/iokit/Kernel/IOService.cpp
+--- a/iokit/Kernel/IOService.cpp
++++ b/iokit/Kernel/IOService.cpp
+@@ -949,3 +949,7 @@
+ 	IOLog("SWEET IOK: after register resp=%p\n",
+ 	    gIOResources->getParentEntry(gIOServicePlane));
++	{
++		extern void sweet_force_hid(IOService *);
++		sweet_force_hid(gIOResources);
++	}
+ }
