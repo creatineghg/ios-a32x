@@ -1,0 +1,8 @@
+diff --git a/iokit/Kernel/arm/hid/SweetHID.cpp b/iokit/Kernel/arm/hid/SweetHID.cpp
+--- a/iokit/Kernel/arm/hid/SweetHID.cpp
++++ b/iokit/Kernel/arm/hid/SweetHID.cpp
+@@ -562,3 +562,3 @@
+-void
++extern "C" void
+ sweet_force_hid(IOService *provider)
+ {
