@@ -1,0 +1,25 @@
+diff --git a/bsd/netinet6/in6_cga.c b/bsd/netinet6/in6_cga.c
+--- a/bsd/netinet6/in6_cga.c
++++ b/bsd/netinet6/in6_cga.c
+@@ -196,6 +196,10 @@
+ void
+ in6_cga_node_lock(void)
+ {
++	if (!in6_cga.cga_initialized) {
++		printf("SWEET: lazy in6_cga_init\n");
++		in6_cga_init();
++	}
+ 	VERIFY(in6_cga.cga_initialized);
+ 	lck_mtx_lock(&in6_cga.cga_mutex);
+ }
+@@ -203,6 +207,10 @@
+ void
+ in6_cga_node_unlock(void)
+ {
++	if (!in6_cga.cga_initialized) {
++		printf("SWEET: lazy in6_cga_init unlock\n");
++		in6_cga_init();
++	}
+ 	VERIFY(in6_cga.cga_initialized);
+ 	lck_mtx_unlock(&in6_cga.cga_mutex);
+ }
