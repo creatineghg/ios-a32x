@@ -1,0 +1,39 @@
+diff --git a/iokit/Kernel/arm/hid/SweetHID.cpp b/iokit/Kernel/arm/hid/SweetHID.cpp
+--- a/iokit/Kernel/arm/hid/SweetHID.cpp
++++ b/iokit/Kernel/arm/hid/SweetHID.cpp
+@@ -381,6 +381,8 @@
+ bool
+ SweetHIDButtons::start(IOService *provider)
+ {
++	IOLog("SWEET HID: buttons start provider=%p\n", provider);
+ 	if (!IOHIDEventService::start(provider)) {
++		IOLog("SWEET HID: buttons super::start failed\n");
+ 		return false;
+ 	}
+@@ -428,7 +430,9 @@
+ bool
+ SweetHIDTouch::start(IOService *provider)
+ {
++	IOLog("SWEET HID: touch start provider=%p\n", provider);
+ 	fLock = IOLockAlloc();
+ 	if (!fLock || !IOHIDEventService::start(provider)) {
++		IOLog("SWEET HID: touch init failed lock=%p\n", fLock);
+ 		return false;
+ 	}
+diff --git a/bsd/dev/sweet_ufs.c b/bsd/dev/sweet_ufs.c
+--- a/bsd/dev/sweet_ufs.c
++++ b/bsd/dev/sweet_ufs.c
+@@ -66,10 +66,11 @@
+ 		int res = sweet_iokit_count("IOResources");
+ 		int wdt = sweet_iokit_count("IOWatchdog");
+ 		int iomfb = sweet_iokit_count("IOMobileFramebuffer");
++		int hid = sweet_iokit_count("IOHIDEventService");
+ 		extern int sweet_dt_children, sweet_dt_nubs, sweet_dt_disp;
+ 		extern int sweet_disp_stage;
+ 		for (int i = 0; i < 16; i++) {
+-			printf("SWEET: hb disp=%d res=%d wdt=%d iomfb=%d dt=%d nubs=%d d0=%d cs=%d\n",
++			printf("SWEET: hb disp=%d res=%d wdt=%d iomfb=%d dt=%d nubs=%d d0=%d cs=%d hid=%d\n",
+ 			    sweet_display_state, res, wdt, iomfb,
+-			    sweet_dt_children, sweet_dt_nubs, sweet_dt_disp, sweet_disp_stage);
++			    sweet_dt_children, sweet_dt_nubs, sweet_dt_disp, sweet_disp_stage, hid);
+ 		}
