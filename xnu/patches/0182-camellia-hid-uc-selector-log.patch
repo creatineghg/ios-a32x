@@ -1,0 +1,15 @@
+diff --git a/iokit/Kernel/arm/hid/IOHIDEventServiceUserClient.cpp b/iokit/Kernel/arm/hid/IOHIDEventServiceUserClient.cpp
+--- a/iokit/Kernel/arm/hid/IOHIDEventServiceUserClient.cpp
++++ b/iokit/Kernel/arm/hid/IOHIDEventServiceUserClient.cpp
+@@ -210,5 +210,10 @@
+     IOReturn result = kIOReturnOffline;
+   
+     require(!isInactive(), exit);
++    static uint64_t sweet_uc_logged = 0;
++    uint32_t sweet_sel = arguments->selector;
++    if (sweet_sel < 64 && !(sweet_uc_logged & (1ULL << sweet_sel))) {
++        sweet_uc_logged |= 1ULL << sweet_sel;
++        IOLog("SWEET HID: UC sel=%u\n", sweet_sel);
++    }
+  
+     result = dispatchExternalMethod(arguments->selector, arguments->arguments, sMethods, sizeof(sMethods) / sizeof(sMethods[0]), this, NULL);
