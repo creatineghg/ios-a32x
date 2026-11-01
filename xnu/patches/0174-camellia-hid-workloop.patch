@@ -1,0 +1,16 @@
+diff --git a/iokit/Kernel/arm/hid/SweetHID.cpp b/iokit/Kernel/arm/hid/SweetHID.cpp
+--- a/iokit/Kernel/arm/hid/SweetHID.cpp
++++ b/iokit/Kernel/arm/hid/SweetHID.cpp
+@@ -19,3 +19,4 @@
+ #include <IOKit/IOLib.h>
+ #include <IOKit/IOService.h>
++#include <IOKit/IOWorkLoop.h>
+ #include <IOKit/IOTimerEventSource.h>
+@@ -54,4 +55,7 @@
+ 	_clientLock = IOLockAlloc();
+ 	_clients = OSArray::withCapacity(2);
+ 	_hidWorkLoop = getWorkLoop();
++	if (_hidWorkLoop == NULL) {
++		_hidWorkLoop = IOWorkLoop::workLoop();
++	}
+ 	if (!_clientLock || !_clients || !_hidWorkLoop) {
