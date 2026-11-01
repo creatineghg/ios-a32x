@@ -1,7 +1,7 @@
 diff --git a/bsd/net/necp.c b/bsd/net/necp.c
 --- a/bsd/net/necp.c
 +++ b/bsd/net/necp.c
-@@ -1632,4 +1632,11 @@
+@@ -1632,4 +1632,10 @@
  void
  necp_init(void)
  {
