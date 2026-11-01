@@ -1,0 +1,17 @@
+diff --git a/iokit/Kernel/arm/hid/IOHIDEventServiceUserClient.cpp b/iokit/Kernel/arm/hid/IOHIDEventServiceUserClient.cpp
+--- a/iokit/Kernel/arm/hid/IOHIDEventServiceUserClient.cpp
++++ b/iokit/Kernel/arm/hid/IOHIDEventServiceUserClient.cpp
+@@ -260,10 +260,13 @@
+     uint32_t      forceNotifyUsagePair = 0;
+     uint32_t      queueSizeOverride = 0;
+     uint32_t      qOptions = 0;
++	uint32_t      sweet_stage = 0;
+   
++	sweet_stage = 1;
+     require (super::start(provider), exit);
+   
+     _owner = OSDynamicCast(IOHIDEventService, provider);
++	sweet_stage = 2;
+     require (_owner, exit);
+ 
+     _owner->retain();
