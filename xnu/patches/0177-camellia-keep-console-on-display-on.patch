@@ -1,0 +1,19 @@
+diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -588,13 +588,6 @@
+ 	case kSweetFBRequestPowerChange:
+ 		if (args->scalarInputCount >= 1) {
+-			bool off = args->scalarInput[0] == 0;
+-			IOLockLock(fFB->fLock);
+-			if (off != fFB->fPowerOff) {
+-				fFB->fPowerOff = off;
+-				fFB->fFadeStep = 0;
+-				fFB->fDirty = true;     /* on: redraw the latest frame */
+-			}
+-			IOLockUnlock(fFB->fLock);
+-			IOLog("SWEET FB: display %s\n", off ? "off" : "on");
++			IOLog("SWEET FB: display %s (console kept)\n",
++			    args->scalarInput[0] ? "on" : "off");
+ 		}
+ 		break;
