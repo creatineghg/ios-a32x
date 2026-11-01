@@ -1,7 +1,7 @@
 diff --git a/iokit/Kernel/arm/hid/IOHIDEventServiceUserClient.cpp b/iokit/Kernel/arm/hid/IOHIDEventServiceUserClient.cpp
 --- a/iokit/Kernel/arm/hid/IOHIDEventServiceUserClient.cpp
 +++ b/iokit/Kernel/arm/hid/IOHIDEventServiceUserClient.cpp
-@@ -210,5 +210,10 @@
+@@ -210,5 +210,11 @@
      IOReturn result = kIOReturnOffline;
    
      require(!isInactive(), exit);
