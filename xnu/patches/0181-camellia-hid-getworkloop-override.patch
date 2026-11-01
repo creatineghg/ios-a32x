@@ -1,0 +1,21 @@
+diff --git a/iokit/Kernel/arm/hid/IOHIDEventService.h b/iokit/Kernel/arm/hid/IOHIDEventService.h
+--- a/iokit/Kernel/arm/hid/IOHIDEventService.h
++++ b/iokit/Kernel/arm/hid/IOHIDEventService.h
+@@ -51,3 +51,4 @@
+ 	virtual IOReturn        newUserClient(task_t owningTask, void *securityID, UInt32 type,
+ 	    OSDictionary *properties, IOUserClient **handler) APPLE_KEXT_OVERRIDE;
++	virtual IOWorkLoop *    getWorkLoop() const APPLE_KEXT_OVERRIDE;
+ 
+ protected:
+diff --git a/iokit/Kernel/arm/hid/SweetHID.cpp b/iokit/Kernel/arm/hid/SweetHID.cpp
+--- a/iokit/Kernel/arm/hid/SweetHID.cpp
++++ b/iokit/Kernel/arm/hid/SweetHID.cpp
+@@ -292,3 +292,9 @@
++IOWorkLoop *
++IOHIDEventService::getWorkLoop() const
++{
++	return _hidWorkLoop;
++}
++
+ IOReturn
+ IOHIDEventService::newUserClient(task_t owningTask, void *securityID, UInt32 type,
