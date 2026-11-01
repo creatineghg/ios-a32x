@@ -1,0 +1,12 @@
+diff --git a/iokit/Kernel/arm/hid/SweetHID.cpp b/iokit/Kernel/arm/hid/SweetHID.cpp
+--- a/iokit/Kernel/arm/hid/SweetHID.cpp
++++ b/iokit/Kernel/arm/hid/SweetHID.cpp
+@@ -54,6 +54,9 @@
+ 	_hidWorkLoop = getWorkLoop();
+ 	if (_hidWorkLoop == NULL) {
+ 		_hidWorkLoop = IOWorkLoop::workLoop();
++		if (_hidWorkLoop != NULL) {
++			setWorkLoop(_hidWorkLoop);
++		}
+ 	}
+ 	if (!_clientLock || !_clients || !_hidWorkLoop) {
