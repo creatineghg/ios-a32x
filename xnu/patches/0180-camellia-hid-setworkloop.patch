@@ -1,7 +1,7 @@
 diff --git a/iokit/Kernel/arm/hid/SweetHID.cpp b/iokit/Kernel/arm/hid/SweetHID.cpp
 --- a/iokit/Kernel/arm/hid/SweetHID.cpp
 +++ b/iokit/Kernel/arm/hid/SweetHID.cpp
-@@ -54,6 +54,9 @@
+@@ -54,5 +54,8 @@
  	_hidWorkLoop = getWorkLoop();
  	if (_hidWorkLoop == NULL) {
  		_hidWorkLoop = IOWorkLoop::workLoop();
