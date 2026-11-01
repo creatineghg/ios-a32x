@@ -1,0 +1,13 @@
+diff --git a/iokit/Kernel/IOService.cpp b/iokit/Kernel/IOService.cpp
+--- a/iokit/Kernel/IOService.cpp
++++ b/iokit/Kernel/IOService.cpp
+@@ -3138,4 +3138,9 @@
+ void
+ IOService::terminateWorker( IOOptionBits options )
+ {
++	if (OSDynamicCast(IOUserClient, this) != NULL) {
++		IOLog("SWEET: terminateWorker skipped for user client %s\n",
++		    getMetaClass()->getClassName());
++		return;
++	}
+ 	OSArray *           doPhase2List;
