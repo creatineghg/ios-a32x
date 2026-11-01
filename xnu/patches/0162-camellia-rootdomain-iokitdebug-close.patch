@@ -1,0 +1,23 @@
+diff --git a/iokit/Kernel/RootDomainUserClient.cpp b/iokit/Kernel/RootDomainUserClient.cpp
+--- a/iokit/Kernel/RootDomainUserClient.cpp
++++ b/iokit/Kernel/RootDomainUserClient.cpp
+@@ -226,7 +226,7 @@
+ IOReturn
+ RootDomainUserClient::clientClose( void )
+ {
+-	terminate();
++	IOLog("SWEET: RootDomainUserClient closed (terminate skipped)\n");
+ 
+ 	return kIOReturnSuccess;
+ }
+diff --git a/iokit/Kernel/IOKitDebug.cpp b/iokit/Kernel/IOKitDebug.cpp
+--- a/iokit/Kernel/IOKitDebug.cpp
++++ b/iokit/Kernel/IOKitDebug.cpp
+@@ -1603,6 +1603,6 @@
+ IOReturn
+ IOKitDiagnosticsClient::clientClose(void)
+ {
+-	terminate();
++	IOLog("SWEET: IOKitDiagnosticsClient closed (terminate skipped)\n");
+ 	return kIOReturnSuccess;
+ }
