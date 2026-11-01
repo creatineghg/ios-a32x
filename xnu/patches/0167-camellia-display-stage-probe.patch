@@ -1,0 +1,56 @@
+diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -185,14 +185,34 @@
++extern "C" int sweet_disp_stage = 0;
++
+ IOService *
+ sweet_display_create(IOService *provider)
+ {
+-	AppleCLCD *fb = new AppleCLCD;
++	AppleCLCD *fb;
+ 
++	sweet_disp_stage = 1;
++	fb = new AppleCLCD;
+ 	if (fb == NULL) {
++		sweet_disp_stage = -1;
+ 		return NULL;
+ 	}
+-	if (!fb->init() || !fb->attach(provider) || !fb->start(provider)) {
++	sweet_disp_stage = 2;
++	if (!fb->init()) {
++		sweet_disp_stage = -2;
++		fb->release();
++		return NULL;
++	}
++	sweet_disp_stage = 3;
++	if (!fb->attach(provider)) {
++		sweet_disp_stage = -3;
++		fb->release();
++		return NULL;
++	}
++	sweet_disp_stage = 4;
++	if (!fb->start(provider)) {
++		sweet_disp_stage = -4;
+ 		fb->release();
+ 		return NULL;
+ 	}
++	sweet_disp_stage = 5;
+ 	return fb;
+ }
+diff --git a/bsd/dev/sweet_ufs.c b/bsd/dev/sweet_ufs.c
+--- a/bsd/dev/sweet_ufs.c
++++ b/bsd/dev/sweet_ufs.c
+@@ -66,9 +66,10 @@
+ 		int res = sweet_iokit_count("IOResources");
+ 		int wdt = sweet_iokit_count("IOWatchdog");
+ 		int iomfb = sweet_iokit_count("IOMobileFramebuffer");
+ 		extern int sweet_dt_children, sweet_dt_nubs, sweet_dt_disp;
++		extern int sweet_disp_stage;
+ 		for (int i = 0; i < 16; i++) {
+-			printf("SWEET: hb disp=%d res=%d wdt=%d iomfb=%d dt=%d nubs=%d d0=%d\n",
++			printf("SWEET: hb disp=%d res=%d wdt=%d iomfb=%d dt=%d nubs=%d d0=%d cs=%d\n",
+ 			    sweet_display_state, res, wdt, iomfb,
+-			    sweet_dt_children, sweet_dt_nubs, sweet_dt_disp);
++			    sweet_dt_children, sweet_dt_nubs, sweet_dt_disp, sweet_disp_stage);
+ 		}
