@@ -1,0 +1,19 @@
+diff --git a/iokit/Kernel/arm/hid/SweetHID.cpp b/iokit/Kernel/arm/hid/SweetHID.cpp
+--- a/iokit/Kernel/arm/hid/SweetHID.cpp
++++ b/iokit/Kernel/arm/hid/SweetHID.cpp
+@@ -605,5 +605,14 @@
+ 		if (!sok) {
+ 			hid->release();
+ 		}
+ 	}
++	{
++		uint32_t stall = 0;
++
++		if (PE_parse_boot_argn("sweetstall", &stall, sizeof(stall)) && stall) {
++			for (;;) {
++				IOLog("SWEET STALL: alive\n");
++				IOSleep(5000);
++			}
++		}
++	}
+ }
