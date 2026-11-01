@@ -1,0 +1,12 @@
+diff --git a/bsd/dev/sweet_ufs.c b/bsd/dev/sweet_ufs.c
+--- a/bsd/dev/sweet_ufs.c
++++ b/bsd/dev/sweet_ufs.c
+@@ -699,3 +699,8 @@
+ #endif
++	{
++		extern void necp_init(void);
++		printf("SWEET: early necp_init\n");
++		necp_init();
++	}
+ 	/* Input drivers (HID services in iokit/Kernel/arm/hid/SweetHID.cpp). */
+ 	sweet_keys_init();
