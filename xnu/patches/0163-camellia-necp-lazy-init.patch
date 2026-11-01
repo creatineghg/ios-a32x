@@ -1,0 +1,19 @@
+diff --git a/bsd/net/necp.c b/bsd/net/necp.c
+--- a/bsd/net/necp.c
++++ b/bsd/net/necp.c
+@@ -1632,4 +1632,11 @@
+ void
+ necp_init(void)
+ {
++	static int sweet_necp_initialized = 0;
++
++	if (sweet_necp_initialized) {
++		return;
++	}
++	sweet_necp_initialized = 1;
+ 	necp_log_handle = os_log_create("com.apple.xnu.net.necp", "necp");
+@@ -837,3 +844,4 @@
+ 	uid_t uid = kauth_cred_getuid(kauth_cred_get());
+ 
++	necp_init();
+ 	if (!necp_is_platform_binary(p)) {
