@@ -1,0 +1,20 @@
+diff --git a/iokit/Kernel/arm/hid/SweetHID.cpp b/iokit/Kernel/arm/hid/SweetHID.cpp
+--- a/iokit/Kernel/arm/hid/SweetHID.cpp
++++ b/iokit/Kernel/arm/hid/SweetHID.cpp
+@@ -561,3 +561,4 @@
+ extern "C" void ml_phys_write_word(unsigned long, unsigned int);
++extern "C" unsigned int ml_phys_read_word(unsigned long);
+ 
+ extern "C" void
+@@ -566,7 +567,11 @@
+ extern "C" void
+ sweet_force_hid(IOService *provider)
+ {
++	IOLog("SWEET WDT: before mode=%x status=%x\n",
++	    ml_phys_read_word(0x10007000UL), ml_phys_read_word(0x1000700CUL));
+ 	ml_phys_write_word(0x10007000UL, 0);
+ 	ml_phys_write_word(0x10007008UL, 0);
+ 	IOLog("SWEET WDT: toprgu mode/restart cleared\n");
++	IOLog("SWEET WDT: after mode=%x status=%x\n",
++	    ml_phys_read_word(0x10007000UL), ml_phys_read_word(0x1000700CUL));
+ 	IOService *hid;
