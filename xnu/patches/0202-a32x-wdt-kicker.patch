@@ -1,0 +1,110 @@
+diff --git a/bsd/dev/sweet_ufs.c b/bsd/dev/sweet_ufs.c
+index 45292ae..0da691d 100644
+--- a/bsd/dev/sweet_ufs.c
++++ b/bsd/dev/sweet_ufs.c
+@@ -1032,4 +1032,69 @@ sweet_ufs_rootdev(dev_t *dev)
+ 	*dev = su.bdev;
+ 	return 0;
+ }
++/*
++ * a32x: the shim leaves the MT6853 TOPRGU watchdog armed (31 s) so a hung XNU
++ * resets into the memdump cycle. A kernel thread kicks it for a bounded time
++ * (a32x_wdtkick= seconds, default 240, 0 = off): a dead scheduler/timer still
++ * resets after 31 s, a live but stuck kernel resets 31 s after the window ends.
++ */
++#define A32X_TOPRGU_PA          0x10007000UL
++#define A32X_WDT_RESTART        0x08
++#define A32X_WDT_RESTART_KEY    0x1971U
++static vm_offset_t a32x_toprgu;
++static uint32_t a32x_wdtkick_left;
++
++static void
++a32x_wdt_sleep(event_t ev, uint64_t secs)
++{
++	uint64_t deadline;
++	nanoseconds_to_absolutetime(secs * NSEC_PER_SEC, &deadline);
++	deadline += mach_absolute_time();
++	assert_wait_deadline_with_leeway(ev, THREAD_UNINT, TIMEOUT_URGENCY_SYS_CRITICAL, deadline, 0);
++	thread_block(THREAD_CONTINUE_NULL);
++}
++
++static void
++a32x_wdt_thread(__unused void *arg, __unused wait_result_t wr)
++{
++	while (a32x_wdtkick_left > 0) {
++		*(volatile uint32_t *)(a32x_toprgu + A32X_WDT_RESTART) = A32X_WDT_RESTART_KEY;
++		__builtin_arm_dsb(0xf);
++		uint32_t step = MIN(a32x_wdtkick_left, 5u);
++		a32x_wdtkick_left -= step;
++		a32x_wdt_sleep((event_t)&a32x_wdtkick_left, step);
++	}
++	printf("A32X WDT: kick window over, reset in <= 31 s if still running\n");
++	for (;;) {
++		a32x_wdt_sleep((event_t)&a32x_toprgu, 3600);
++	}
++}
++
++void a32x_wdt_kick_start(void);
++
++void
++a32x_wdt_kick_start(void)
++{
++	static bool started;
++	uint32_t secs = 240;
++	thread_t thread;
++
++	if (started) {
++		return;
++	}
++	started = true;
++	PE_parse_boot_argn("a32x_wdtkick", &secs, sizeof(secs));
++	if (secs == 0) {
++		printf("A32X WDT: kicker off (a32x_wdtkick=0)\n");
++		return;
++	}
++	a32x_toprgu = ml_io_map(A32X_TOPRGU_PA, PAGE_SIZE);
++	a32x_wdtkick_left = secs;
++	if (kernel_thread_start(a32x_wdt_thread, NULL, &thread) == KERN_SUCCESS) {
++		thread_deallocate(thread);
++		printf("A32X WDT: kicking TOPRGU for %u s\n", secs);
++	} else {
++		printf("A32X WDT: kicker thread failed\n");
++	}
++}
+ #endif /* ARM64_BOARD_CONFIG_SWEET */
+diff --git a/iokit/bsddev/IOKitBSDInit.cpp b/iokit/bsddev/IOKitBSDInit.cpp
+index 06f2151..653439e 100644
+--- a/iokit/bsddev/IOKitBSDInit.cpp
++++ b/iokit/bsddev/IOKitBSDInit.cpp
+@@ -651,6 +651,10 @@ do_reboot:
+ 	return true;
+ }
+ 
++#if defined(ARM64_BOARD_CONFIG_SWEET)
++extern "C" void a32x_wdt_kick_start(void);
++#endif
++
+ kern_return_t
+ IOFindBSDRoot( char * rootName, unsigned int rootNameSize,
+     dev_t * root, u_int32_t * oflags )
+@@ -683,7 +687,20 @@ IOFindBSDRoot( char * rootName, unsigned int rootNameSize,
+ 	assert(matching);
+ 	matching->setObject(gIOResourceMatchedKey, gIOBSDKey);
+ 
++#if defined(ARM64_BOARD_CONFIG_SWEET)
++	/*
++	 * a32x: keep the shim's 31 s watchdog fed while we wait here (IOResources
++	 * is only registered from sweet_ufs_init, so IOBSD never matches first),
++	 * and bsdwait= shortens that pointless wait.
++	 */
++	uint32_t bsdwait = 30;
++	a32x_wdt_kick_start();
++	PE_parse_boot_argn("bsdwait", &bsdwait, sizeof(bsdwait));
++	IOLog("A32X: IOFindBSDRoot waits %u s for IOBSD\n", bsdwait);
++	if ((service = IOService::waitForMatchingService(matching, (uint64_t)bsdwait * kSecondScale))) {
++#else
+ 	if ((service = IOService::waitForMatchingService(matching, 30ULL * kSecondScale))) {
++#endif
+ 		OSSafeReleaseNULL(service);
+ 	} else {
+ 		IOLog("!BSD\n");
