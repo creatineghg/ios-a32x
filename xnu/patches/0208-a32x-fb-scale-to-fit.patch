@@ -1,0 +1,109 @@
+diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
+index 686feeb..d0f0fe1 100644
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -137,6 +137,9 @@ public:
+ 	uint32_t      fWidth, fHeight, fRowBytes;
+ 	uint32_t      fLogicalW, fLogicalH;     /* size reported to userland */
+ 	int32_t       fOffX, fOffY;             /* logical origin of the panel */
++	bool          fFit;                     /* a32x: scale the logical frame onto the panel */
++	uint32_t      fInvQ;                    /* a32x: logical px per panel px, 16.16 */
++	int32_t       fFitX, fFitY, fFitW, fFitH; /* a32x: scaled frame rect on the panel */
+ 	uintptr_t     fPixels;          /* kernel mapping of the panel memory */
+ 	IOMemoryMap  *fMap;
+ 	SweetSurface *fSurface;         /* the panel memory as an IOSurface */
+@@ -247,6 +250,33 @@ AppleCLCD::start(IOService *provider)
+ 	}
+ 	fOffX = (int32_t)(fLogicalW - fWidth) / 2;
+ 	fOffY = (int32_t)(fLogicalH - fHeight) / 2;
++	/*
++	 * a32x: the A32 panel (720x1600) is much smaller than the presented iPhone X
++	 * frame, so a centre crop hides the status bar and the sides. Scale the
++	 * whole frame down instead (nearest neighbour, aspect kept, letterboxed).
++	 * Boot-arg sweetfb_fit=0 restores the crop.
++	 */
++	int fit = (fLogicalW * 9 > fWidth * 10) ? 1 : 0;
++	PE_parse_boot_argn("sweetfb_fit", &fit, sizeof(fit));
++	fFit = fit != 0 && (fLogicalW != fWidth || fLogicalH != fHeight);
++	if (fFit) {
++		/* scale = min(W/LW, H/LH); inverse in 16.16 */
++		uint64_t invW = ((uint64_t)fLogicalW << 16) / fWidth;
++		uint64_t invH = ((uint64_t)fLogicalH << 16) / fHeight;
++		fInvQ = (uint32_t)(invW > invH ? invW : invH);
++		fFitW = (int32_t)(((uint64_t)fLogicalW << 16) / fInvQ);
++		fFitH = (int32_t)(((uint64_t)fLogicalH << 16) / fInvQ);
++		if (fFitW > (int32_t)fWidth) {
++			fFitW = (int32_t)fWidth;
++		}
++		if (fFitH > (int32_t)fHeight) {
++			fFitH = (int32_t)fHeight;
++		}
++		fFitX = ((int32_t)fWidth - fFitW) / 2;
++		fFitY = ((int32_t)fHeight - fFitH) / 2;
++		IOLog("SWEET FB: a32x fit %ux%u -> %dx%d at %d,%d (inv 0x%x)\n",
++		    fLogicalW, fLogicalH, fFitW, fFitH, fFitX, fFitY, fInvQ);
++	}
+ 	fLock = IOLockAlloc();
+ 	fClients = OSArray::withCapacity(4);
+ 	fSurface = sweet_surface_create_physical(fPhys, fWidth, fHeight, fRowBytes, SWEET_FB_FORMAT_BGRA);
+@@ -398,6 +428,21 @@ AppleCLCD::present(const uint8_t *rec)
+ 		}
+ 	}
+ 
++	if (fFit) {
++		/* black letterbox bars (console text may have been drawn there) */
++		for (int32_t y = 0; y < (int32_t)fHeight; y++) {
++			if (y >= fFitY && y < fFitY + fFitH) {
++				if (fFitX > 0) {
++					bzero((void *)(fPixels + (uint64_t)y * fRowBytes), (size_t)fFitX * 4);
++					bzero((void *)(fPixels + (uint64_t)y * fRowBytes + (uint64_t)(fFitX + fFitW) * 4),
++					    (size_t)((int32_t)fWidth - fFitX - fFitW) * 4);
++				}
++				continue;
++			}
++			bzero((void *)(fPixels + (uint64_t)y * fRowBytes), (size_t)fWidth * 4);
++		}
++	}
++
+ 	for (uint32_t layer = 0; layer < SWEET_FB_LAYERS; layer++) {
+ 		uint32_t id = get32(rec, 0x54 + 4 * layer);
+ 		const uint8_t *a = rec + 0x64 + 16 * layer;
+@@ -433,6 +478,38 @@ AppleCLCD::present(const uint8_t *rec)
+ 		if (dx < 0 || dy < 0) {
+ 			dx = dy = 0;
+ 		}
++		if (fFit) {
++			/* a32x: clamp the source rect, then sample it for every panel pixel
++			 * of the scaled frame that falls inside the layer's logical rect. */
++			if (w > (int32_t)s->width - sx) {
++				w = (int32_t)s->width - sx;
++			}
++			if (h > (int32_t)s->height - sy) {
++				h = (int32_t)s->height - sy;
++			}
++			uint64_t flast = (uint64_t)s->offset + (uint64_t)(sy + h - 1) * s->bytesPerRow +
++			    (uint64_t)(sx + w) * 4;
++			if (w > 0 && h > 0 && bpe == 4 && s->elementWidth == 1 && s->elementHeight == 1 &&
++			    s->memory != NULL && flast <= s->memory->getLength()) {
++				for (int32_t py = 0; py < fFitH; py++) {
++					int32_t ly = (int32_t)(((uint64_t)py * fInvQ) >> 16);
++					if (ly < dy || ly >= dy + h) {
++						continue;
++					}
++					const uint32_t *srow = (const uint32_t *)(src + s->offset +
++					    (uint64_t)(sy + ly - dy) * s->bytesPerRow);
++					uint32_t *drow = (uint32_t *)(fPixels + (uint64_t)(fFitY + py) * fRowBytes);
++					for (int32_t px = 0; px < fFitW; px++) {
++						int32_t lx = (int32_t)(((uint64_t)px * fInvQ) >> 16);
++						if (lx >= dx && lx < dx + w) {
++							drow[fFitX + px] = srow[sx + lx - dx];
++						}
++					}
++				}
++			}
++			s->release();
++			continue;
++		}
+ 		/* Logical (presented) display coordinates -> panel coordinates. */
+ 		dx -= fOffX;
+ 		dy -= fOffY;
