@@ -1,0 +1,57 @@
+diff --git a/bsd/dev/sweet_ufs.c b/bsd/dev/sweet_ufs.c
+index d29aa00..b23867d 100644
+--- a/bsd/dev/sweet_ufs.c
++++ b/bsd/dev/sweet_ufs.c
+@@ -1437,14 +1437,22 @@ a32x_sleep_ms(uint32_t ms)
+ 	thread_block(THREAD_CONTINUE_NULL);
+ }
+ 
++static uint32_t a32x_spi_lost;
++
+ static bool
+ a32x_spi_wait(void)
+ {
+ 	uint64_t deadline;
+-	nanoseconds_to_absolutetime(5 * NSEC_PER_MSEC, &deadline);
++	nanoseconds_to_absolutetime(20 * NSEC_PER_MSEC, &deadline);
+ 	deadline += mach_absolute_time();
+ 	while (SPIR(0x1c) == 0) {               /* STATUS0: finish/pause, read-clear */
+ 		if (mach_absolute_time() > deadline) {
++			/* ios28: ~1 packet in 100 never raised STATUS0. If the engine is no
++			 * longer busy (STATUS1 bit 0) the packet went out: take it. */
++			if ((SPIR(0x20) & 1u) == 0) {
++				a32x_spi_lost++;
++				return true;
++			}
+ 			return false;
+ 		}
+ 	}
+@@ -1595,9 +1603,16 @@ a32x_nvt_download(void)
+ 			left += 1;                                       /* Samsung writes size + 1 */
+ 			while (left > 0) {
+ 				uint32_t n = MIN(left, NVT_CHUNK);
+-				if (a32x_nvt_write(sram, a32x_nvt_fw + bin, n) != 0) {
++				int tries = 0;
++				while (a32x_nvt_write(sram, a32x_nvt_fw + bin, n) != 0 && ++tries < 5) {
++					a32x_spin_us(200);              /* SRAM write: safe to repeat */
++				}
++				if (tries > 0) {
+ 					werr++;
+ 				}
++				if (tries >= 5) {
++					werr += 1000;
++				}
+ 				sram += n;
+ 				bin += n;
+ 				left -= n;
+@@ -1626,8 +1641,8 @@ a32x_nvt_download(void)
+ 		absolutetime_to_nanoseconds(t1 - t0, &ns);
+ 		uint8_t crcf = 0;
+ 		a32x_nvt_read(NVT_BLD_ILM_DLM_CRC, &crcf, 1);
+-		printf("A32X TOUCH: fw download attempt %d: %d write errors, %llu ms, reset state %02x %02x %02x %02x %02x, crc flags %02x\n",
+-		    attempt, werr, ns / NSEC_PER_MSEC, st[0], st[1], st[2], st[3], st[4], crcf);
++		printf("A32X TOUCH: fw download attempt %d: %d retried chunks (+1000 per lost), %u lost flags, %llu ms, reset state %02x %02x %02x %02x %02x, crc flags %02x\n",
++		    attempt, werr, a32x_spi_lost, ns / NSEC_PER_MSEC, st[0], st[1], st[2], st[3], st[4], crcf);
+ 		if (st[0] >= 0xA0 && st[0] <= 0xAF) {
+ 			return st[0];
+ 		}
