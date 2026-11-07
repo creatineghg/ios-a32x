@@ -1,0 +1,82 @@
+diff --git a/bsd/dev/sweet_ufs.c b/bsd/dev/sweet_ufs.c
+index 0da691d..1f28263 100644
+--- a/bsd/dev/sweet_ufs.c
++++ b/bsd/dev/sweet_ufs.c
+@@ -305,7 +305,7 @@ ufs_scsi(const uint8_t *cdb, unsigned cdb_len, uint32_t len, bool write)
+  * over 2 MiB sections. ADT /sweet-ufs "a32x-extents" = u32 triples (logical,
+  * physical, count) in 4 KiB blocks, physical relative to the partition start.
+  * Partition-relative reads go through it; GPT reads (below first_block) do not.
+- * Writes are not mapped: boot without ufsrw/rootrw while the map is in use.
++ * Writes are mapped the same way (patch 0203); unmapped blocks are refused.
+  */
+ static const uint32_t *a32x_ext;
+ static uint32_t a32x_ext_runs;
+@@ -404,7 +404,7 @@ ufs_read_blocks_dev(uint64_t lba, uint32_t count)
+  * must lie inside the partition: this is the only place data goes out.
+  */
+ static int
+-ufs_write_blocks(uint64_t lba, uint32_t count)
++ufs_write_blocks_dev(uint64_t lba, uint32_t count)
+ {
+ 	if (!su.writable || !su.nblocks || count == 0 || count > BOUNCE_SIZE / UFS_BLOCK ||
+ 	    lba < su.first_block || lba - su.first_block >= su.nblocks ||
+@@ -420,6 +420,45 @@ ufs_write_blocks(uint64_t lba, uint32_t count)
+ 	return ufs_scsi(cdb, sizeof(cdb), count * UFS_BLOCK, true);
+ }
+ 
++/*
++ * a32x: partition-relative writes go through the extent map like reads, so
++ * only blocks of the pinned iosroot file can ever be written; anything the
++ * map does not cover is refused (the rest of userdata is Android's f2fs).
++ */
++static int
++ufs_write_blocks(uint64_t lba, uint32_t count)
++{
++	if (a32x_ext_state == 0) {
++		a32x_ext_load();
++	}
++	if (a32x_ext_state < 0 || su.first_block == 0 || lba < su.first_block) {
++		return ufs_write_blocks_dev(lba, count);
++	}
++	uint64_t rel = lba - su.first_block, abs;
++	uint64_t run = a32x_ext_map(rel, &abs);
++	if (run >= count) {
++		return ufs_write_blocks_dev(abs, count);
++	}
++	/* crosses runs or unmapped: scatter the bounce piecewise */
++	uint8_t *bounce = (uint8_t *)(su.dma + DMA_BOUNCE);
++	memcpy(a32x_ext_tmp, bounce, (size_t)count * UFS_BLOCK);
++	for (uint32_t done = 0; done < count;) {
++		run = a32x_ext_map(rel + done, &abs);
++		if (run == 0) {
++			printf("A32X UFS: refusing write to unmapped block %llu\n", rel + done);
++			return EPERM;
++		}
++		uint32_t n = (uint32_t)MIN(run, (uint64_t)(count - done));
++		memcpy(bounce, a32x_ext_tmp + (size_t)done * UFS_BLOCK, (size_t)n * UFS_BLOCK);
++		int error = ufs_write_blocks_dev(abs, n);
++		if (error) {
++			return error;
++		}
++		done += n;
++	}
++	return 0;
++}
++
+ static int
+ ufs_sync_cache(void)
+ {
+@@ -1004,6 +1043,13 @@ sweet_log_start(void)
+ 	if (!on || !su.writable || su.nblocks < 2 * SWEET_LOG_BLOCKS) {
+ 		return;
+ 	}
++	if (a32x_ext_state == 0) {
++		a32x_ext_load();
++	}
++	if (a32x_ext_state > 0) {
++		printf("A32X UFS: sweetlog off (partition tail is not ours with an extent map)\n");
++		return;
++	}
+ 	PE_parse_boot_argn("ufslogsecs", &sweet_log_secs, sizeof(sweet_log_secs));
+ 	if (sweet_log_secs == 0 || sweet_log_secs > 60) {
+ 		sweet_log_secs = SWEET_LOG_SECS;
