@@ -1,0 +1,58 @@
+diff --git a/bsd/dev/sweet_ufs.c b/bsd/dev/sweet_ufs.c
+index 2664cb4..0ed80b6 100644
+--- a/bsd/dev/sweet_ufs.c
++++ b/bsd/dev/sweet_ufs.c
+@@ -935,6 +935,43 @@ static uint32_t sweet_log_secs = SWEET_LOG_SECS;
+ /* Called for all console output, any context: never blocks. */
+ void sweet_log_append(const char *c, int size);
+ 
++/*
++ * a32x: the A32XKLOG RAM ring (pexpert/arm/pe_serial.c, patch 0200) is fed from
++ * the fbcon draw path, which sweetfb_noconsole=1 (patch 0067) skips once the GUI
++ * presents, so the post-reset dump lost everything after the first frame. While
++ * the console is muted, feed the ring from here instead (same layout, cleaned
++ * to PoC per byte so it survives the watchdog reset).
++ */
++extern int sweet_console_muted;         /* osfmk/console/serial_console.c */
++extern struct a32x_klog_view {
++	char     magic[8];
++	uint32_t pos;
++	uint32_t wrapped;
++	char     buf[1024 * 1024];
++} a32x_klog;
++
++static void
++a32x_klog_muted_append(const char *c, int size)
++{
++	volatile struct a32x_klog_view *k = &a32x_klog;
++	if (k->magic[0] != 'A') {
++		return;
++	}
++	uint32_t pos = k->pos;
++	for (int i = 0; i < size; i++) {
++		if (pos >= sizeof(k->buf)) {
++			pos = 0;
++			k->wrapped = 1;
++		}
++		k->buf[pos] = c[i];
++		__asm__ volatile ("dc civac, %0" : : "r"(&k->buf[pos]) : "memory");
++		pos++;
++	}
++	k->pos = pos;
++	__asm__ volatile ("dc civac, %0" : : "r"(k) : "memory");
++	__asm__ volatile ("dsb sy" : : : "memory");
++}
++
+ void
+ sweet_log_append(const char *c, int size)
+ {
+@@ -945,6 +982,9 @@ sweet_log_append(const char *c, int size)
+ 	for (int i = 0; i < size; i++) {
+ 		sweet_log_ring[(at + (uint64_t)i) % SWEET_LOG_SIZE] = c[i];
+ 	}
++	if (sweet_console_muted) {
++		a32x_klog_muted_append(c, size);
++	}
+ }
+ 
+ /*
