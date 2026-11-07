@@ -1,0 +1,79 @@
+diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
+index 6fe99b3..7092f86 100644
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -473,6 +473,10 @@ bsd_rooted_ramdisk(void)
+  * of the tro_ucred field so that the uthread structure can be
+  * used like any other.
+  */
++#if defined(SWEET)
++static uint32_t a32x_net = 1;    /* boot-arg a32xnet */
++#endif
++
+ void
+ bsd_init(void)
+ {
+@@ -776,13 +780,24 @@ bsd_init(void)
+ 	kprintf("KB: after socketinit\n");
+ 	bsd_init_kprintf("calling domaininit\n");
+ 	kprintf("KB: before domaininit\n");
+-#if !defined(SWEET)
++#if defined(SWEET)
++	/*
++	 * a32x: the network domains (AF_UNIX, AF_INET*, PF_SYSTEM, PF_ROUTE...)
++	 * were compiled out during early bring-up (0102/0109), so every socket()
++	 * failed with EAFNOSUPPORT and configd, SpringBoard, launchd... stalled or
++	 * crashed. Boot-arg a32xnet=0 restores the old skip.
++	 */
++	PE_parse_boot_argn("a32xnet", &a32x_net, sizeof(a32x_net));
++	printf("A32X NET: domaininit %s\n", a32x_net ? "on" : "off (a32xnet=0)");
++	if (a32x_net) {
++		domaininit();
++		iptap_init();
++	}
++#else
+ 	domaininit();
+-#endif
+-	kprintf("KB: after domaininit\n");
+-#if !defined(SWEET)
+ 	iptap_init();
+ #endif
++	kprintf("KB: after domaininit\n");
+ #if FLOW_DIVERT
+ #if !defined(SWEET)
+ 	flow_divert_init();
+@@ -807,6 +822,10 @@ bsd_init(void)
+ #endif
+ #if !defined(SWEET)
+ 	netagent_init();
++#else
++	if (a32x_net) {
++		netagent_init();
++	}
+ #endif
+ 	kprintf("KB: after netagent_init\n");
+ #endif /* NETWORKING */
+@@ -844,6 +863,11 @@ bsd_init(void)
+ 	dtrace_postinit();
+ 	kprintf("KB: after dtrace_postinit\n");
+ #endif
++#endif /* !defined(SWEET): dtrace */
++#if defined(SWEET)
++	if (a32x_net)
++#endif
++	{
+ 
+ 	/*
+ 	 * We attach the loopback interface *way* down here to ensure
+@@ -908,7 +932,10 @@ bsd_init(void)
+ 	net_init_run();
+ 	kprintf("KB: after net_init_run\n");
+ #endif /* NETWORKING */
+-#endif /* !defined(SWEET): skip dtrace + net init */
++#if defined(SWEET)
++	printf("A32X NET: loopback, ether family, net controls, net_init_run done\n");
++#endif
++	}
+ 
+ 	bsd_init_kprintf("calling inittodr\n");
+ 	kprintf("KB: before inittodr\n");
