@@ -1,0 +1,62 @@
+diff --git a/pexpert/arm/pe_serial.c b/pexpert/arm/pe_serial.c
+index f9b78fa..21b3404 100644
+--- a/pexpert/arm/pe_serial.c
++++ b/pexpert/arm/pe_serial.c
+@@ -758,9 +758,57 @@ fbcon_transmit_ready(void)
+ 	return 1;
+ }
+ 
++/*
++ * a32x: every console byte also goes to a RAM ring in the kernel image (linear
++ * map), cleaned to PoC per byte, so it survives a watchdog reset. The a32x shim
++ * finds it by magic after the reset and DMAs it to the bota partition.
++ */
++#define A32X_KLOG_SIZE  (1024 * 1024)
++struct a32x_klog {
++	char     magic[8];
++	uint32_t pos;
++	uint32_t wrapped;
++	char     buf[A32X_KLOG_SIZE];
++};
++__attribute__((used, aligned(4096))) struct a32x_klog a32x_klog;
++
++static void
++a32x_klog_clean(volatile void *p)
++{
++	__asm__ volatile ("dc civac, %0" : : "r"(p) : "memory");
++}
++
++static void
++a32x_klog_putc(uint8_t c)
++{
++	volatile struct a32x_klog *k = &a32x_klog;
++	if (k->magic[0] != 'A') {
++		const char m[8] = { 'A', '3', '2', 'X', 'K', 'L', 'O', 'G' };
++		for (int i = 0; i < 8; i++) {
++			k->magic[i] = m[i];
++		}
++		k->pos = 0;
++		k->wrapped = 0;
++	}
++	uint32_t pos = k->pos;
++	if (pos >= A32X_KLOG_SIZE) {
++		pos = 0;
++	}
++	k->buf[pos] = (char)c;
++	a32x_klog_clean(&k->buf[pos]);
++	if (++pos >= A32X_KLOG_SIZE) {
++		pos = 0;
++		k->wrapped = 1;
++	}
++	k->pos = pos;
++	a32x_klog_clean(k);
++	__asm__ volatile ("dsb sy" : : : "memory");
++}
++
+ static void
+ fbcon_transmit_data(uint8_t c)
+ {
++	a32x_klog_putc(c);
+ 	if (c == '\r') {
+ 		fbcon_col = 0;
+ 		return;
