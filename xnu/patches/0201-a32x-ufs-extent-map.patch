@@ -1,0 +1,102 @@
+diff --git a/bsd/dev/sweet_ufs.c b/bsd/dev/sweet_ufs.c
+index ad3c50d..20596f7 100644
+--- a/bsd/dev/sweet_ufs.c
++++ b/bsd/dev/sweet_ufs.c
+@@ -199,9 +199,96 @@ ufs_scsi(const uint8_t *cdb, unsigned cdb_len, uint32_t len)
+ 	return 0;
+ }
+ 
+-/* READ(10) of count device blocks at lba into the bounce buffer. */
++/*
++ * a32x: the iOS root is a pinned f2fs file inside the ufsroot= partition, spread
++ * over 2 MiB sections. ADT /sweet-ufs "a32x-extents" = u32 triples (logical,
++ * physical, count) in 4 KiB blocks, physical relative to the partition start.
++ * Partition-relative reads go through it; GPT reads (below first_block) do not.
++ * Writes are not mapped: boot without ufsrw/rootrw while the map is in use.
++ */
++static const uint32_t *a32x_ext;
++static uint32_t a32x_ext_runs;
++static int a32x_ext_state;              /* 0 unknown, 1 loaded, -1 absent */
++static uint8_t a32x_ext_tmp[BOUNCE_SIZE];
++
++static int ufs_read_blocks_dev(uint64_t lba, uint32_t count);
++
++static void
++a32x_ext_load(void)
++{
++	DTEntry node;
++	void const *prop = NULL;
++	unsigned int size = 0;
++
++	a32x_ext_state = -1;
++	if (SecureDTLookupEntry(NULL, "/sweet-ufs", &node) == kSuccess &&
++	    SecureDTGetProperty(node, "a32x-extents", &prop, &size) == kSuccess && size >= 12) {
++		a32x_ext = (const uint32_t *)prop;
++		a32x_ext_runs = size / 12;
++		a32x_ext_state = 1;
++		printf("A32X UFS: extent map, %u runs
++", a32x_ext_runs);
++	}
++}
++
++/* partition-relative block -> absolute lba; returns blocks left in that run (0: unmapped) */
++static uint64_t
++a32x_ext_map(uint64_t rel, uint64_t *abs)
++{
++	for (uint32_t i = 0; i < a32x_ext_runs; i++) {
++		uint64_t lo = a32x_ext[3 * i], n = a32x_ext[3 * i + 2];
++		if (rel >= lo && rel < lo + n) {
++			*abs = su.first_block + a32x_ext[3 * i + 1] + (rel - lo);
++			return lo + n - rel;
++		}
++	}
++	return 0;
++}
++
+ static int
+ ufs_read_blocks(uint64_t lba, uint32_t count)
++{
++	if (a32x_ext_state == 0) {
++		a32x_ext_load();
++	}
++	if (a32x_ext_state < 0 || su.first_block == 0 || lba < su.first_block) {
++		return ufs_read_blocks_dev(lba, count);
++	}
++	uint64_t rel = lba - su.first_block, abs;
++	uint64_t run = a32x_ext_map(rel, &abs);
++	if (run == 0) {
++		printf("A32X UFS: unmapped block %llu
++", rel);
++		return EIO;
++	}
++	if (run >= count) {
++		return ufs_read_blocks_dev(abs, count);
++	}
++	/* crosses runs: gather piecewise, then hand the caller one contiguous bounce */
++	uint8_t *bounce = (uint8_t *)(su.dma + DMA_BOUNCE);
++	for (uint32_t done = 0; done < count;) {
++		run = a32x_ext_map(rel + done, &abs);
++		if (run == 0) {
++			printf("A32X UFS: unmapped block %llu
++", rel + done);
++			return EIO;
++		}
++		uint32_t n = (uint32_t)MIN(run, (uint64_t)(count - done));
++		int error = ufs_read_blocks_dev(abs, n);
++		if (error) {
++			return error;
++		}
++		memcpy(a32x_ext_tmp + (size_t)done * UFS_BLOCK, bounce, (size_t)n * UFS_BLOCK);
++		done += n;
++	}
++	memcpy(bounce, a32x_ext_tmp, (size_t)count * UFS_BLOCK);
++	CleanPoC_DcacheRegion((vm_offset_t)bounce, (size_t)count * UFS_BLOCK);
++	return 0;
++}
++
++/* READ(10) of count device blocks at lba into the bounce buffer. */
++static int
++ufs_read_blocks_dev(uint64_t lba, uint32_t count)
+ {
+ 	if (lba > UINT32_MAX || count > BOUNCE_SIZE / UFS_BLOCK) {
+ 		return EINVAL;
