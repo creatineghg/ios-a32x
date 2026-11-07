@@ -1,0 +1,143 @@
+diff --git a/bsd/dev/sweet_ufs.c b/bsd/dev/sweet_ufs.c
+index 89cd82b..27ab76c 100644
+--- a/bsd/dev/sweet_ufs.c
++++ b/bsd/dev/sweet_ufs.c
+@@ -1217,6 +1217,130 @@ a32x_wdt_thread(__unused void *arg, __unused wait_result_t wr)
+ 	}
+ }
+ 
++/*
++ * a32x keys (Galaxy A32 5G, MT6853 + MT6359 PMIC), polled at 50 Hz:
++ *   Volume Up   = keypad matrix key 1 (KP @0x10010000, KP_MEM1 bit 1, 0 = pressed)
++ *   Power       = MT6359 TOPSTATUS (0x2a) bit 1 (PWRKEY_DEB, 0 = pressed)
++ *   Volume Down = MT6359 TOPSTATUS bit 3 (HOMEKEY_DEB, 0 = pressed)
++ * PMIC reads go through the PMIC wrapper's AP channel (WACS2, MT6873-family
++ * layout: CMD 0xC80, SWINF_2_RDATA 0xC94, VLDCLR 0xCA4, status 0xCA8 with the
++ * arbiter FSM in bits 3:1). Keys go to SweetHIDButtons (patch 0058):
++ * 0 power, 1 volume up, 2 volume down, 3 home.
++ * Boot-args: a32xkeys=0 off; a32xvoldown_home=1 makes Volume Down the Home
++ * button (useful before touch works).
++ */
++#define A32X_KP_PA      0x10010000u
++#define A32X_PWRAP_PA   0x10026000u
++#define A32X_MT6359_TOPSTATUS 0x2au
++
++extern void sweet_hid_key(int key, int down);  /* iokit/Kernel/arm/hid/SweetHID.cpp */
++
++static vm_offset_t a32x_kp, a32x_pwrap;
++static uint32_t a32x_pwrap_errors;
++
++static uint32_t
++a32x_pwrap_fsm(void)
++{
++	return (*(volatile uint32_t *)(a32x_pwrap + 0xCA8) >> 1) & 7u;
++}
++
++static bool
++a32x_pwrap_wait(uint32_t state)
++{
++	uint64_t deadline;
++	nanoseconds_to_absolutetime(2 * NSEC_PER_MSEC, &deadline);
++	deadline += mach_absolute_time();
++	while (a32x_pwrap_fsm() != state) {
++		if (mach_absolute_time() > deadline) {
++			return false;
++		}
++	}
++	return true;
++}
++
++static int
++a32x_pwrap_read(uint32_t adr, uint32_t *out)
++{
++	if (!a32x_pwrap_wait(0)) {                      /* FSM_IDLE */
++		if (a32x_pwrap_fsm() == 6) {                /* stuck in WFVLDCLR */
++			*(volatile uint32_t *)(a32x_pwrap + 0xCA4) = 1;
++		}
++		return -1;
++	}
++	*(volatile uint32_t *)(a32x_pwrap + 0xC80) = adr;
++	if (!a32x_pwrap_wait(6)) {                      /* FSM_WFVLDCLR: data valid */
++		return -2;
++	}
++	*out = *(volatile uint32_t *)(a32x_pwrap + 0xC94) & 0xffffu;
++	*(volatile uint32_t *)(a32x_pwrap + 0xCA4) = 1;
++	return 0;
++}
++
++static void
++a32x_keys_thread(__unused void *arg, __unused wait_result_t wr)
++{
++	static const char *names[] = { "power", "volume up", "volume down" };
++	uint32_t voldown_home = 0;
++	bool last[3] = { false, false, false };
++	PE_parse_boot_argn("a32xvoldown_home", &voldown_home, sizeof(voldown_home));
++
++	uint32_t top = 0xffff;
++	int rc = a32x_pwrap_read(A32X_MT6359_TOPSTATUS, &top);
++	printf("A32X KEYS: KP_MEM1..5 %04x %04x %04x %04x %04x, MT6359 TOPSTATUS %04x (rc %d)%s\n",
++	    *(volatile uint32_t *)(a32x_kp + 0x04) & 0xffff, *(volatile uint32_t *)(a32x_kp + 0x08) & 0xffff,
++	    *(volatile uint32_t *)(a32x_kp + 0x0c) & 0xffff, *(volatile uint32_t *)(a32x_kp + 0x10) & 0xffff,
++	    *(volatile uint32_t *)(a32x_kp + 0x14) & 0xffff, top, rc,
++	    voldown_home ? ", volume down = Home" : "");
++
++	for (;;) {
++		bool now[3];
++		uint32_t kp = *(volatile uint32_t *)(a32x_kp + 0x04);
++		now[1] = (kp & (1u << 1)) == 0;
++		if (a32x_pwrap_read(A32X_MT6359_TOPSTATUS, &top) == 0) {
++			now[0] = (top & 0x2u) == 0;
++			now[2] = (top & 0x8u) == 0;
++		} else {
++			now[0] = last[0];
++			now[2] = last[2];
++			if (a32x_pwrap_errors++ < 8) {
++				printf("A32X KEYS: pwrap read failed (fsm %u)\n", a32x_pwrap_fsm());
++			}
++		}
++		for (int k = 0; k < 3; k++) {
++			if (now[k] != last[k]) {
++				int hid = (k == 2 && voldown_home) ? 3 : k;
++				printf("A32X KEYS: %s %s\n", names[k], now[k] ? "down" : "up");
++				sweet_hid_key(hid, now[k]);
++				last[k] = now[k];
++			}
++		}
++		uint64_t deadline;
++		nanoseconds_to_absolutetime(20 * NSEC_PER_MSEC, &deadline);
++		deadline += mach_absolute_time();
++		assert_wait_deadline((event_t)&a32x_kp, THREAD_UNINT, deadline);
++		thread_block(THREAD_CONTINUE_NULL);
++	}
++}
++
++static void
++a32x_keys_start(void)
++{
++	uint32_t on = 1;
++	thread_t thread;
++	PE_parse_boot_argn("a32xkeys", &on, sizeof(on));
++	if (!on) {
++		printf("A32X KEYS: off (a32xkeys=0)\n");
++		return;
++	}
++	a32x_kp = ml_io_map(A32X_KP_PA, PAGE_SIZE);
++	a32x_pwrap = ml_io_map(A32X_PWRAP_PA, PAGE_SIZE);
++	if (kernel_thread_start(a32x_keys_thread, NULL, &thread) == KERN_SUCCESS) {
++		thread_deallocate(thread);
++	} else {
++		printf("A32X KEYS: thread failed\n");
++	}
++}
++
+ void a32x_wdt_kick_start(void);
+ 
+ void
+@@ -1230,6 +1354,7 @@ a32x_wdt_kick_start(void)
+ 		return;
+ 	}
+ 	started = true;
++	a32x_keys_start();
+ 	PE_parse_boot_argn("a32x_wdtkick", &secs, sizeof(secs));
+ 	if (secs == 0) {
+ 		printf("A32X WDT: kicker off (a32x_wdtkick=0)\n");
