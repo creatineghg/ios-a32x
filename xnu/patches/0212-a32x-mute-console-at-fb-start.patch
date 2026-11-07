@@ -1,0 +1,27 @@
+diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
+index d0f0fe1..5833fbd 100644
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -289,6 +289,22 @@ AppleCLCD::start(IOService *provider)
+ 		OSSafeReleaseNULL(fWorkLoop);
+ 		return false;
+ 	}
++	/*
++	 * a32x: sweetfb_noconsole=2 mutes the kernel text console as soon as the
++	 * display driver starts (not only at the first GUI frame) and clears the
++	 * panel, so no log text is drawn over the boot logo. The log still goes
++	 * to the RAM ring (0206). A panic draws again.
++	 */
++	{
++		int quiet = 0;
++		if (PE_parse_boot_argn("sweetfb_noconsole", &quiet, sizeof(quiet)) && quiet >= 2 && fPixels != 0) {
++			sweet_console_muted = 1;
++			for (uint32_t y = 0; y < fHeight; y++) {
++				bzero((void *)(fPixels + (uint64_t)y * fRowBytes), (size_t)fWidth * 4);
++			}
++			IOLog("SWEET FB: console muted at driver start (sweetfb_noconsole=2)\n");
++		}
++	}
+ 	fVsync = IOTimerEventSource::timerEventSource(this, &AppleCLCD::vsyncFired);
+ 	if (fVsync == NULL || fWorkLoop->addEventSource(fVsync) != kIOReturnSuccess) {
+ 		sweet_display_state = -4;

@@ -1,0 +1,50 @@
+diff --git a/bsd/kern/uipc_syscalls.c b/bsd/kern/uipc_syscalls.c
+index 50625c0..09d9e02 100644
+--- a/bsd/kern/uipc_syscalls.c
++++ b/bsd/kern/uipc_syscalls.c
+@@ -245,6 +245,19 @@ socket_delegate(proc_ref_t p,
+ 	return socket_common(p, uap->domain, uap->type, uap->protocol,
+ 	           uap->epid, retval, 1);
+ }
++/* a32x: log failed socket() calls (first 64), to find daemons blocked on missing protocols */
++static int a32x_sock_logged;
++static int
++a32x_sock_fail(proc_ref_t p, int domain, int type, int protocol, int error, const char *where)
++{
++	if (a32x_sock_logged < 64) {
++		a32x_sock_logged++;
++		printf("A32X SOCK: %s[%d] socket(%d, %d, %d) failed in %s: %d\n",
++		    proc_best_name(p), proc_pid(p), domain, type, protocol, where, error);
++	}
++	return error;
++}
++
+ 
+ static int
+ socket_common(proc_ref_t p,
+@@ -263,7 +276,7 @@ socket_common(proc_ref_t p,
+ #if CONFIG_MACF_SOCKET_SUBSET
+ 	if ((error = mac_socket_check_create(kauth_cred_get(), domain,
+ 	    type, protocol)) != 0) {
+-		return error;
++		return a32x_sock_fail(p, domain, type, protocol, error, "mac_socket_check_create");
+ 	}
+ #endif /* MAC_SOCKET_SUBSET */
+ 
+@@ -277,7 +290,7 @@ socket_common(proc_ref_t p,
+ 
+ 	error = falloc(p, &fp, &fd, vfs_context_current());
+ 	if (error) {
+-		return error;
++		return a32x_sock_fail(p, domain, type, protocol, error, "falloc");
+ 	}
+ 	fp->f_flag = FREAD | FWRITE;
+ 	fp->f_ops = &socketops;
+@@ -290,6 +303,7 @@ socket_common(proc_ref_t p,
+ 
+ 	if (error) {
+ 		fp_free(p, fd, fp);
++		(void)a32x_sock_fail(p, domain, type, protocol, error, "socreate");
+ 	} else {
+ 		fp_set_data(fp, so);
+ 
