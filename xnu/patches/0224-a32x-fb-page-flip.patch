@@ -1,0 +1,162 @@
+diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
+index f265bff..6b23392 100644
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -45,6 +45,7 @@ extern "C" int sweet_console_muted;     /* osfmk/console/serial_console.c */
+ #include <IOKit/IOLib.h>
+ #include <IOKit/IOLocks.h>
+ #include <IOKit/IOWorkLoop.h>
++#include <IOKit/IOBufferMemoryDescriptor.h>
+ #include <IOKit/IOTimerEventSource.h>
+ #include <IOKit/system.h>
+ #include <pexpert/pexpert.h>
+@@ -177,6 +178,9 @@ OSDefineMetaClassAndStructors(AppleCLCD, IOMobileFramebuffer);
+ static IOLock *sweet_scale_lock, *sweet_scale_run_lock;
+ static uint32_t sweet_scale_workers = 1;
+ static void sweet_scale_worker(void *arg, wait_result_t wr);
++static void sweet_flip_setup(AppleCLCD *fb);
++extern "C" vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
++extern "C" task_t kernel_task;
+ extern "C" kern_return_t kernel_thread_start(thread_continue_t, void *, thread_t *);
+ 
+ class IOMobileFramebufferUserClient : public IOUserClient {
+@@ -370,6 +374,9 @@ AppleCLCD::start(IOService *provider)
+ 			IOLog("SWEET FB: console muted at driver start (sweetfb_noconsole=2)\n");
+ 		}
+ 	}
++	if (fFit) {
++		sweet_flip_setup(this);
++	}
+ 	fVsync = IOTimerEventSource::timerEventSource(this, &AppleCLCD::vsyncFired);
+ 	if (fVsync == NULL || fWorkLoop->addEventSource(fVsync) != kIOReturnSuccess) {
+ 		sweet_display_state = -4;
+@@ -407,6 +414,72 @@ AppleCLCD::start(IOService *provider)
+  * table, bands on helper threads, 2x2 average (the frame is scaled x0.64,
+  * nearest neighbour makes text ragged). sweetfb_filter=0, sweetfb_threads=N.
+  */
++/*
++ * a32x (0223): frames were drawn straight into the buffer the panel scans out,
++ * which tears. Now two buffers: draw into the hidden one and point the OVL layer
++ * at it (MT6853 DISP_OVL0/OVL0_2L, L0-L3 address 0xf40 + 0x20n, shadow bypassed).
++ * Set up only if a layer really scans our framebuffer (M4U off, phys address);
++ * otherwise it stays single-buffered. sweetfb_flip=0 disables it.
++ */
++static const uint32_t sweet_ovl_pa[2] = { 0x14005000u, 0x14006000u };
++static volatile uint32_t *sweet_flip_addr;
++static uint64_t sweet_flip_phys[2];
++static uintptr_t sweet_flip_va[2];
++static int sweet_flip_front;            /* index the panel scans */
++static uint64_t sweet_flip_last;        /* time of the last flip */
++static uintptr_t sweet_flip_draw;       /* draw target of this frame, 0 = fPixels */
++
++static void
++sweet_flip_setup(AppleCLCD *fb)
++{
++	static bool done;
++	int on = 1;
++	if (done) {
++		return;
++	}
++	done = true;
++	PE_parse_boot_argn("sweetfb_flip", &on, sizeof(on));
++	if (!on) {
++		IOLog("SWEET FB: flip off (sweetfb_flip=0)\n");
++		return;
++	}
++	volatile uint32_t *found = NULL, *base = NULL;
++	for (int o = 0; o < 2 && found == NULL; o++) {
++		volatile uint8_t *ovl = (volatile uint8_t *)ml_io_map(sweet_ovl_pa[o], 0x1000);
++		uint32_t src = *(volatile uint32_t *)(ovl + 0x2c);
++		for (int n = 0; n < 4; n++) {
++			uint32_t a = *(volatile uint32_t *)(ovl + 0xf40 + 0x20 * n);
++			IOLog("SWEET FB: ovl %x L%d addr %08x src_con %08x en %08x\n", sweet_ovl_pa[o], n, a, src,
++			    *(volatile uint32_t *)(ovl + 0x0c));
++			if (found == NULL && a == (uint32_t)fb->fPhys) {
++				found = (volatile uint32_t *)(ovl + 0xf40 + 0x20 * n);
++				base = (volatile uint32_t *)ovl;
++			}
++		}
++	}
++	if (found == NULL) {
++		IOLog("SWEET FB: no overlay layer scans 0x%llx, single buffer\n", fb->fPhys);
++		return;
++	}
++	IOByteCount size = (IOByteCount)fb->fRowBytes * fb->fHeight;
++	IOBufferMemoryDescriptor *mem = IOBufferMemoryDescriptor::inTaskWithPhysicalMask(kernel_task,
++	    kIODirectionInOut | kIOMemoryPhysicallyContiguous, size, 0x00000000FFFFF000ULL);
++	IOMemoryMap *map = mem != NULL ? mem->createMappingInTask(kernel_task, 0, kIOMapAnywhere | kIOMapWriteCombineCache) : NULL;
++	if (map == NULL) {
++		IOLog("SWEET FB: no second buffer, single buffer\n");
++		return;
++	}
++	sweet_flip_phys[0] = fb->fPhys;
++	sweet_flip_va[0] = fb->fPixels;
++	sweet_flip_phys[1] = mem->getPhysicalSegment(0, NULL, kIOMemoryMapperNone);
++	sweet_flip_va[1] = (uintptr_t)map->getVirtualAddress();
++	bzero((void *)sweet_flip_va[1], size);
++	*(volatile uint32_t *)((uintptr_t)base + 0x0c) |= (1u << 22);   /* DISP_OVL_BYPASS_SHADOW */
++	sweet_flip_addr = found;
++	sweet_flip_front = 0;
++	IOLog("SWEET FB: flip on, second buffer at 0x%llx\n", sweet_flip_phys[1]);
++}
++
+ #define SWEET_AVG(a, b) (((a) & (b)) + ((((a) ^ (b)) & 0xfefefefeu) >> 1))
+ 
+ struct SweetScale {
+@@ -429,7 +502,7 @@ sweet_scale_band(const SweetScale *j, int32_t py0, int32_t py1)
+ 		}
+ 		const uint32_t *r0 = (const uint32_t *)(j->base + (uint64_t)(j->sy + ly - j->dy) * j->bpr);
+ 		const uint32_t *r1 = (ly + 1 < j->dy + j->h) ? (const uint32_t *)((const uint8_t *)r0 + j->bpr) : r0;
+-		uint32_t *d = (uint32_t *)(fb->fPixels + (uint64_t)(fb->fFitY + py) * fb->fRowBytes +
++		uint32_t *d = (uint32_t *)((sweet_flip_draw ? sweet_flip_draw : fb->fPixels) + (uint64_t)(fb->fFitY + py) * fb->fRowBytes +
+ 		    (uint64_t)(fb->fFitX + j->pxFrom) * 4);
+ 		int32_t shift = j->sx - j->dx, lastc = j->dx + j->w - 1;
+ 		if (filter) {
+@@ -551,7 +624,7 @@ AppleCLCD::vsyncFired(OSObject *owner, IOTimerEventSource *sender)
+ 		IOLockUnlock(fb->fLock);
+ 		if (step <= 6) {
+ 			for (uint32_t y = 0; y < fb->fHeight; y++) {
+-				volatile uint32_t *row = (volatile uint32_t *)(fb->fPixels + (uint64_t)y * fb->fRowBytes);
++				volatile uint32_t *row = (volatile uint32_t *)((sweet_flip_addr ? sweet_flip_va[sweet_flip_front] : fb->fPixels) + (uint64_t)y * fb->fRowBytes);
+ 				for (uint32_t x = 0; x < fb->fWidth; x++) {
+ 					row[x] = step < 6 ? (row[x] >> 1) & 0x7f7f7f7f : 0;
+ 				}
+@@ -563,7 +636,11 @@ AppleCLCD::vsyncFired(OSObject *owner, IOTimerEventSource *sender)
+ 	bool flush = fb->fDirty && (count % fb->fFlushTicks) == 0;
+ 	uint8_t *rec = NULL;
+ 	if (flush && fb->fPresentTimer != NULL) {
+-		if (!fb->fPresentBusy) {
++		uint64_t since = 0;
++		if (sweet_flip_addr != NULL) {
++			absolutetime_to_nanoseconds(now - sweet_flip_last, &since);
++		}
++		if (!fb->fPresentBusy && (sweet_flip_addr == NULL || since >= 17000000ULL)) {
+ 			fb->fPresentBusy = true;
+ 			IOLockUnlock(fb->fLock);
+ 			fb->fPresentTimer->setTimeoutUS(1);
+@@ -653,7 +730,10 @@ AppleCLCD::present(const uint8_t *rec)
+ 		}
+ 	}
+ 
+-	if (fFit) {
++	if (sweet_flip_addr != NULL) {
++		sweet_flip_draw = sweet_flip_va[1 - sweet_flip_front];
++	}
++	if (fFit && sweet_flip_addr == NULL) {
+ 		/* black letterbox bars (console text may have been drawn there) */
+ 		for (int32_t y = 0; y < (int32_t)fHeight; y++) {
+ 			if (y >= fFitY && y < fFitY + fFitH) {
+@@ -786,6 +866,13 @@ AppleCLCD::present(const uint8_t *rec)
+ 		}
+ 		s->release();
+ 	}
++	if (sweet_flip_addr != NULL) {
++		/* show the finished frame; the panel latches it at its next frame start */
++		__asm__ volatile ("dsb sy");
++		*sweet_flip_addr = (uint32_t)sweet_flip_phys[1 - sweet_flip_front];
++		sweet_flip_front = 1 - sweet_flip_front;
++		sweet_flip_last = mach_absolute_time();
++	}
+ }
+ 
+ bool
