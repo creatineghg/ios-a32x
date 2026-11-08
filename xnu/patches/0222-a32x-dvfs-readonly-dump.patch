@@ -1,0 +1,54 @@
+diff --git a/bsd/dev/sweet_ufs.c b/bsd/dev/sweet_ufs.c
+index aa5edd4..531d243 100644
+--- a/bsd/dev/sweet_ufs.c
++++ b/bsd/dev/sweet_ufs.c
+@@ -1299,6 +1299,30 @@ a32x_pwrap_read(uint32_t adr, uint32_t *out)
+ 	return 0;
+ }
+ 
++/* read-only: current PLL/divider/voltage state, to validate addresses before any DVFS write */
++static volatile int a32x_dvfs_dump_req;
++
++static void
++a32x_dvfs_dump(void)
++{
++	static const uint32_t regs[] = { 0x1726, 0x172e, 0x17a6, 0x17b2, 0x1b44, 0x1b46, 0x1e90, 0x1eb0 };
++	static const char *names[] = { "vproc1 now", "vproc1 sel", "vproc2 now", "vproc2 sel",
++		                       "vsram1 sel", "vsram2 sel", "vsram1 now", "vsram2 now" };
++	vm_offset_t ap = ml_io_map(0x1000C000u, PAGE_SIZE);
++	vm_offset_t mc = ml_io_map(0x0C53A000u, PAGE_SIZE);
++	printf("A32X DVFS: ARMPLL LL con0 %08x con1 %08x, L con0 %08x con1 %08x, CCI con1 %08x\n",
++	    *(volatile uint32_t *)(ap + 0x208), *(volatile uint32_t *)(ap + 0x20c),
++	    *(volatile uint32_t *)(ap + 0x218), *(volatile uint32_t *)(ap + 0x21c),
++	    *(volatile uint32_t *)(ap + 0x25c));
++	printf("A32X DVFS: ckdiv LL %08x L %08x CCI %08x\n",
++	    *(volatile uint32_t *)(mc + 0x2a0), *(volatile uint32_t *)(mc + 0x2a4), *(volatile uint32_t *)(mc + 0x2e0));
++	for (unsigned i = 0; i < sizeof(regs) / sizeof(regs[0]); i++) {
++		uint32_t v = 0xffff;
++		int rc = a32x_pwrap_read(regs[i], &v);
++		printf("A32X DVFS: pmic %04x %s = %04x (rc %d)\n", regs[i], names[i], v, rc);
++	}
++}
++
+ static void
+ a32x_keys_thread(__unused void *arg, __unused wait_result_t wr)
+ {
+@@ -1344,6 +1368,10 @@ a32x_keys_thread(__unused void *arg, __unused wait_result_t wr)
+ 				sweet_hid_key(hid, now[k]);
+ 			}
+ 		}
++		if (a32x_dvfs_dump_req) {
++			a32x_dvfs_dump_req = 0;
++			a32x_dvfs_dump();
++		}
+ 		uint64_t deadline;
+ 		nanoseconds_to_absolutetime(20 * NSEC_PER_MSEC, &deadline);
+ 		deadline += mach_absolute_time();
+@@ -1819,6 +1847,7 @@ a32x_cpu_probe(__unused void *arg, __unused wait_result_t wr)
+ 	}
+ 	thread_bind((processor_t)NULL);
+ 	thread_block(THREAD_CONTINUE_NULL);
++	a32x_dvfs_dump_req = 1;
+ 	for (;;) {
+ 		a32x_sleep_ms(3600000);
+ 	}
