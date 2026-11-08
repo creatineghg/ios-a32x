@@ -1,5 +1,5 @@
 diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
-index 5833fbd..a3502b5 100644
+index 5833fbd..c0efdb0 100644
 --- a/iokit/Kernel/arm/SweetFramebuffer.cpp
 +++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
 @@ -49,6 +49,7 @@ extern "C" int sweet_console_muted;     /* osfmk/console/serial_console.c */
@@ -41,7 +41,19 @@ index 5833fbd..a3502b5 100644
  
  	bool start(IOService *provider) APPLE_KEXT_OVERRIDE;
  	void addClient(IOMobileFramebufferUserClient *client);
-@@ -274,9 +285,49 @@ AppleCLCD::start(IOService *provider)
+@@ -162,6 +173,11 @@ public:
+ 
+ OSDefineMetaClassAndStructors(AppleCLCD, IOMobileFramebuffer);
+ 
++#define SWEET_SCALE_MAX_THREADS 4
++static IOLock *sweet_scale_lock;
++static void sweet_scale_worker(void *arg, wait_result_t wr);
++extern "C" kern_return_t kernel_thread_start(thread_continue_t, void *, thread_t *);
++
+ class IOMobileFramebufferUserClient : public IOUserClient {
+ 	OSDeclareDefaultStructors(IOMobileFramebufferUserClient);
+ 
+@@ -274,9 +290,49 @@ AppleCLCD::start(IOService *provider)
  		}
  		fFitX = ((int32_t)fWidth - fFitW) / 2;
  		fFitY = ((int32_t)fHeight - fFitH) / 2;
@@ -91,7 +103,7 @@ index 5833fbd..a3502b5 100644
  	fLock = IOLockAlloc();
  	fClients = OSArray::withCapacity(4);
  	fSurface = sweet_surface_create_physical(fPhys, fWidth, fHeight, fRowBytes, SWEET_FB_FORMAT_BGRA);
-@@ -314,6 +365,16 @@ AppleCLCD::start(IOService *provider)
+@@ -314,6 +370,15 @@ AppleCLCD::start(IOService *provider)
  	uint32_t hz = 10;
  	PE_parse_boot_argn("sweetfb_hz", &hz, sizeof(hz));
  	fFlushTicks = (hz == 0 || hz >= 60) ? 1 : 60 / hz;
@@ -100,15 +112,14 @@ index 5833fbd..a3502b5 100644
 +		fPresentTimer = IOTimerEventSource::timerEventSource(this, &AppleCLCD::presentFired);
 +		if (fPresentLoop == NULL || fPresentTimer == NULL ||
 +		    fPresentLoop->addEventSource(fPresentTimer) != kIOReturnSuccess) {
-+			IOLog("SWEET FB: no present loop, copying on the vsync loop
-+");
++			IOLog("SWEET FB: no present loop, copying on the vsync loop\n");
 +			OSSafeReleaseNULL(fPresentTimer);
 +		}
 +	}
  	fVsync->setTimeoutUS(SWEET_FB_VSYNC_US);
  
  	setProperty(kIOUserClientClassKey, "IOMobileFramebufferUserClient");
-@@ -326,6 +387,134 @@ AppleCLCD::start(IOService *provider)
+@@ -326,6 +391,130 @@ AppleCLCD::start(IOService *provider)
  	return true;
  }
  
@@ -120,7 +131,6 @@ index 5833fbd..a3502b5 100644
 + * nearest neighbour makes text ragged). sweetfb_filter=0, sweetfb_threads=N.
 + */
 +#define SWEET_AVG(a, b) (((a) & (b)) + ((((a) ^ (b)) & 0xfefefefeu) >> 1))
-+#define SWEET_SCALE_MAX_THREADS 4
 +
 +struct SweetScale {
 +	AppleCLCD     *fb;
@@ -160,13 +170,10 @@ index 5833fbd..a3502b5 100644
 +	}
 +}
 +
-+static IOLock *sweet_scale_lock;
 +static uint32_t sweet_scale_gen;
 +static const SweetScale *sweet_scale_job;
 +static int32_t sweet_scale_bands;
 +static volatile SInt32 sweet_scale_left;
-+
-+extern "C" kern_return_t kernel_thread_start(thread_continue_t, void *, thread_t *);
 +
 +static void
 +sweet_scale_band_n(const SweetScale *j, int32_t band, int32_t bands)
