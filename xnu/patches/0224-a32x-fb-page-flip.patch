@@ -1,5 +1,5 @@
 diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
-index f265bff..6b23392 100644
+index f265bff..d051cd3 100644
 --- a/iokit/Kernel/arm/SweetFramebuffer.cpp
 +++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
 @@ -45,6 +45,7 @@ extern "C" int sweet_console_muted;     /* osfmk/console/serial_console.c */
@@ -30,7 +30,7 @@ index f265bff..6b23392 100644
  	fVsync = IOTimerEventSource::timerEventSource(this, &AppleCLCD::vsyncFired);
  	if (fVsync == NULL || fWorkLoop->addEventSource(fVsync) != kIOReturnSuccess) {
  		sweet_display_state = -4;
-@@ -407,6 +414,72 @@ AppleCLCD::start(IOService *provider)
+@@ -407,6 +414,76 @@ AppleCLCD::start(IOService *provider)
   * table, bands on helper threads, 2x2 average (the frame is scaled x0.64,
   * nearest neighbour makes text ragged). sweetfb_filter=0, sweetfb_threads=N.
   */
@@ -82,17 +82,21 @@ index f265bff..6b23392 100644
 +		return;
 +	}
 +	IOByteCount size = (IOByteCount)fb->fRowBytes * fb->fHeight;
++	/* write-combined at creation: a second mapping with another cache mode is refused */
 +	IOBufferMemoryDescriptor *mem = IOBufferMemoryDescriptor::inTaskWithPhysicalMask(kernel_task,
-+	    kIODirectionInOut | kIOMemoryPhysicallyContiguous, size, 0x00000000FFFFF000ULL);
-+	IOMemoryMap *map = mem != NULL ? mem->createMappingInTask(kernel_task, 0, kIOMapAnywhere | kIOMapWriteCombineCache) : NULL;
-+	if (map == NULL) {
-+		IOLog("SWEET FB: no second buffer, single buffer\n");
++	    kIODirectionInOut | kIOMemoryPhysicallyContiguous | kIOMapWriteCombineCache, size, 0x00000000FFFFF000ULL);
++	if (mem == NULL) {
++		IOLog("SWEET FB: no contiguous %llu byte buffer below 4 GB, single buffer\n", (uint64_t)size);
++		return;
++	}
++	if (mem->getBytesNoCopy() == NULL) {
++		IOLog("SWEET FB: second buffer has no kernel mapping, single buffer\n");
 +		return;
 +	}
 +	sweet_flip_phys[0] = fb->fPhys;
 +	sweet_flip_va[0] = fb->fPixels;
 +	sweet_flip_phys[1] = mem->getPhysicalSegment(0, NULL, kIOMemoryMapperNone);
-+	sweet_flip_va[1] = (uintptr_t)map->getVirtualAddress();
++	sweet_flip_va[1] = (uintptr_t)mem->getBytesNoCopy();
 +	bzero((void *)sweet_flip_va[1], size);
 +	*(volatile uint32_t *)((uintptr_t)base + 0x0c) |= (1u << 22);   /* DISP_OVL_BYPASS_SHADOW */
 +	sweet_flip_addr = found;
@@ -103,7 +107,7 @@ index f265bff..6b23392 100644
  #define SWEET_AVG(a, b) (((a) & (b)) + ((((a) ^ (b)) & 0xfefefefeu) >> 1))
  
  struct SweetScale {
-@@ -429,7 +502,7 @@ sweet_scale_band(const SweetScale *j, int32_t py0, int32_t py1)
+@@ -429,7 +506,7 @@ sweet_scale_band(const SweetScale *j, int32_t py0, int32_t py1)
  		}
  		const uint32_t *r0 = (const uint32_t *)(j->base + (uint64_t)(j->sy + ly - j->dy) * j->bpr);
  		const uint32_t *r1 = (ly + 1 < j->dy + j->h) ? (const uint32_t *)((const uint8_t *)r0 + j->bpr) : r0;
@@ -112,7 +116,7 @@ index f265bff..6b23392 100644
  		    (uint64_t)(fb->fFitX + j->pxFrom) * 4);
  		int32_t shift = j->sx - j->dx, lastc = j->dx + j->w - 1;
  		if (filter) {
-@@ -551,7 +624,7 @@ AppleCLCD::vsyncFired(OSObject *owner, IOTimerEventSource *sender)
+@@ -551,7 +628,7 @@ AppleCLCD::vsyncFired(OSObject *owner, IOTimerEventSource *sender)
  		IOLockUnlock(fb->fLock);
  		if (step <= 6) {
  			for (uint32_t y = 0; y < fb->fHeight; y++) {
@@ -121,7 +125,7 @@ index f265bff..6b23392 100644
  				for (uint32_t x = 0; x < fb->fWidth; x++) {
  					row[x] = step < 6 ? (row[x] >> 1) & 0x7f7f7f7f : 0;
  				}
-@@ -563,7 +636,11 @@ AppleCLCD::vsyncFired(OSObject *owner, IOTimerEventSource *sender)
+@@ -563,7 +640,11 @@ AppleCLCD::vsyncFired(OSObject *owner, IOTimerEventSource *sender)
  	bool flush = fb->fDirty && (count % fb->fFlushTicks) == 0;
  	uint8_t *rec = NULL;
  	if (flush && fb->fPresentTimer != NULL) {
@@ -134,7 +138,7 @@ index f265bff..6b23392 100644
  			fb->fPresentBusy = true;
  			IOLockUnlock(fb->fLock);
  			fb->fPresentTimer->setTimeoutUS(1);
-@@ -653,7 +730,10 @@ AppleCLCD::present(const uint8_t *rec)
+@@ -653,7 +734,10 @@ AppleCLCD::present(const uint8_t *rec)
  		}
  	}
  
@@ -146,7 +150,7 @@ index f265bff..6b23392 100644
  		/* black letterbox bars (console text may have been drawn there) */
  		for (int32_t y = 0; y < (int32_t)fHeight; y++) {
  			if (y >= fFitY && y < fFitY + fFitH) {
-@@ -786,6 +866,13 @@ AppleCLCD::present(const uint8_t *rec)
+@@ -786,6 +870,13 @@ AppleCLCD::present(const uint8_t *rec)
  		}
  		s->release();
  	}
