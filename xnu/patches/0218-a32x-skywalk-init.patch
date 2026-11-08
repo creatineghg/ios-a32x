@@ -1,0 +1,26 @@
+diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
+index 7092f86..9f32c68 100644
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -809,6 +809,21 @@ bsd_init(void)
+ 	bsd_init_kprintf("calling skywalk_init\n");
+ #if !defined(SWEET)
+ 	(void) skywalk_init();
++#else
++	{
++		/* ios30: with the net domains on, utun_ctl_connect (nehelper) creates a
++		 * Skywalk pbufpool -> panic "ncpu != 0" in skmem_cache.c (skmem never
++		 * initialised). Boot-arg a32xskywalk=0 restores the skip. */
++		uint32_t a32x_sk = 1;
++		PE_parse_boot_argn("a32xskywalk", &a32x_sk, sizeof(a32x_sk));
++		if (a32x_net && a32x_sk) {
++			printf("A32X NET: skywalk_init\n");
++			(void) skywalk_init();
++			printf("A32X NET: skywalk_init done\n");
++		} else {
++			printf("A32X NET: skywalk off\n");
++		}
++	}
+ #endif
+ 	kprintf("KB: after skywalk_init\n");
+ #endif /* SKYWALK */
