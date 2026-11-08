@@ -1,5 +1,5 @@
 diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
-index 5833fbd..c0efdb0 100644
+index 5833fbd..f265bff 100644
 --- a/iokit/Kernel/arm/SweetFramebuffer.cpp
 +++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
 @@ -49,6 +49,7 @@ extern "C" int sweet_console_muted;     /* osfmk/console/serial_console.c */
@@ -41,19 +41,20 @@ index 5833fbd..c0efdb0 100644
  
  	bool start(IOService *provider) APPLE_KEXT_OVERRIDE;
  	void addClient(IOMobileFramebufferUserClient *client);
-@@ -162,6 +173,11 @@ public:
+@@ -162,6 +173,12 @@ public:
  
  OSDefineMetaClassAndStructors(AppleCLCD, IOMobileFramebuffer);
  
 +#define SWEET_SCALE_MAX_THREADS 4
-+static IOLock *sweet_scale_lock;
++static IOLock *sweet_scale_lock, *sweet_scale_run_lock;
++static uint32_t sweet_scale_workers = 1;
 +static void sweet_scale_worker(void *arg, wait_result_t wr);
 +extern "C" kern_return_t kernel_thread_start(thread_continue_t, void *, thread_t *);
 +
  class IOMobileFramebufferUserClient : public IOUserClient {
  	OSDeclareDefaultStructors(IOMobileFramebufferUserClient);
  
-@@ -274,9 +290,49 @@ AppleCLCD::start(IOService *provider)
+@@ -274,9 +291,57 @@ AppleCLCD::start(IOService *provider)
  		}
  		fFitX = ((int32_t)fWidth - fFitW) / 2;
  		fFitY = ((int32_t)fHeight - fFitH) / 2;
@@ -89,21 +90,29 @@ index 5833fbd..c0efdb0 100644
 +				fXTab[px] = (int32_t)(((uint64_t)px * fInvQ) >> 16);
 +			}
 +		}
-+		sweet_scale_lock = IOLockAlloc();
-+		fScaleThreads = sweet_scale_lock != NULL ? th : 1;
-+		for (uint32_t i = 1; i < fScaleThreads; i++) {
-+			thread_t t;
-+			if (kernel_thread_start(sweet_scale_worker, (void *)(uintptr_t)i, &t) != KERN_SUCCESS) {
-+				fScaleThreads = 1;      /* bands of a dead worker would never finish */
-+				break;
++		/* AppleCLCD::start runs several times here: one worker pool for all instances */
++		if (sweet_scale_lock == NULL) {
++			IOLock *run = IOLockAlloc(), *lock = IOLockAlloc();
++			sweet_scale_workers = 1;
++			if (run != NULL && lock != NULL) {
++				sweet_scale_run_lock = run;
++				sweet_scale_lock = lock;
++				for (uint32_t i = 1; i < th; i++) {
++					thread_t t;
++					if (kernel_thread_start(sweet_scale_worker, (void *)(uintptr_t)i, &t) != KERN_SUCCESS) {
++						break;
++					}
++					thread_deallocate(t);
++					sweet_scale_workers = i + 1;
++				}
 +			}
-+			thread_deallocate(t);
 +		}
++		fScaleThreads = sweet_scale_workers;
 +	}
  	fLock = IOLockAlloc();
  	fClients = OSArray::withCapacity(4);
  	fSurface = sweet_surface_create_physical(fPhys, fWidth, fHeight, fRowBytes, SWEET_FB_FORMAT_BGRA);
-@@ -314,6 +370,15 @@ AppleCLCD::start(IOService *provider)
+@@ -314,6 +379,15 @@ AppleCLCD::start(IOService *provider)
  	uint32_t hz = 10;
  	PE_parse_boot_argn("sweetfb_hz", &hz, sizeof(hz));
  	fFlushTicks = (hz == 0 || hz >= 60) ? 1 : 60 / hz;
@@ -119,7 +128,7 @@ index 5833fbd..c0efdb0 100644
  	fVsync->setTimeoutUS(SWEET_FB_VSYNC_US);
  
  	setProperty(kIOUserClientClassKey, "IOMobileFramebufferUserClient");
-@@ -326,6 +391,130 @@ AppleCLCD::start(IOService *provider)
+@@ -326,6 +400,130 @@ AppleCLCD::start(IOService *provider)
  	return true;
  }
  
@@ -250,7 +259,7 @@ index 5833fbd..c0efdb0 100644
  void
  AppleCLCD::vsyncFired(OSObject *owner, IOTimerEventSource *sender)
  {
-@@ -364,6 +553,17 @@ AppleCLCD::vsyncFired(OSObject *owner, IOTimerEventSource *sender)
+@@ -364,6 +562,17 @@ AppleCLCD::vsyncFired(OSObject *owner, IOTimerEventSource *sender)
  	}
  	bool flush = fb->fDirty && (count % fb->fFlushTicks) == 0;
  	uint8_t *rec = NULL;
@@ -268,7 +277,7 @@ index 5833fbd..c0efdb0 100644
  	if (flush) {
  		rec = (uint8_t *)IOMallocData(SWEET_FB_SWAP_REC_SIZE);
  		if (rec != NULL) {
-@@ -506,22 +706,27 @@ AppleCLCD::present(const uint8_t *rec)
+@@ -506,21 +715,32 @@ AppleCLCD::present(const uint8_t *rec)
  			uint64_t flast = (uint64_t)s->offset + (uint64_t)(sy + h - 1) * s->bytesPerRow +
  			    (uint64_t)(sx + w) * 4;
  			if (w > 0 && h > 0 && bpe == 4 && s->elementWidth == 1 && s->elementHeight == 1 &&
@@ -295,7 +304,7 @@ index 5833fbd..c0efdb0 100644
 +				}
 +				while (to > from && fXTab[to - 1] >= dx + w) {
 +					to--;
- 				}
++				}
 +				job.fb = this;
 +				job.base = (const uint8_t *)(src + s->offset);
 +				job.bpr = s->bytesPerRow;
@@ -307,7 +316,12 @@ index 5833fbd..c0efdb0 100644
 +				job.h = h;
 +				job.pxFrom = from;
 +				job.pxTo = to;
++				if (sweet_scale_run_lock != NULL) {
++					IOLockLock(sweet_scale_run_lock);
++				}
 +				sweet_scale_run(&job, (int32_t)fScaleThreads);
++				if (sweet_scale_run_lock != NULL) {
++					IOLockUnlock(sweet_scale_run_lock);
+ 				}
  			}
  			s->release();
- 			continue;
