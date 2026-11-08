@@ -1,0 +1,84 @@
+diff --git a/bsd/dev/sweet_ufs.c b/bsd/dev/sweet_ufs.c
+index b23867d..3b8fa9a 100644
+--- a/bsd/dev/sweet_ufs.c
++++ b/bsd/dev/sweet_ufs.c
+@@ -1438,25 +1438,39 @@ a32x_sleep_ms(uint32_t ms)
+ }
+ 
+ static uint32_t a32x_spi_lost;
++static uint32_t a32x_spi_sck = 8;
++static uint32_t a32x_spi_logged;
+ 
++/*
++ * STATUS0 is read-to-clear. ios28-31: polling it in a tight loop lost the flag
++ * when a read raced the hardware setting it (~1 packet in 12: engine done,
++ * flag gone, 20 ms timeout). Linux reads it only once, from the IRQ. So: wait
++ * out the packet first (worst case source clock 26 MHz), then read STATUS0
++ * sparsely. n = bytes in this packet.
++ */
+ static bool
+-a32x_spi_wait(void)
++a32x_spi_wait(uint32_t n)
+ {
+ 	uint64_t deadline;
++	uint32_t s0;
++	a32x_spin_us((((n + 1) * 8 * 2 * a32x_spi_sck) + 64) / 26 + 2);
+ 	nanoseconds_to_absolutetime(20 * NSEC_PER_MSEC, &deadline);
+ 	deadline += mach_absolute_time();
+-	while (SPIR(0x1c) == 0) {               /* STATUS0: finish/pause, read-clear */
++	for (;;) {
++		s0 = SPIR(0x1c);
++		if (a32x_spi_logged < 6) {
++			a32x_spi_logged++;
++			printf("A32X TOUCH: packet of %u: status0 %08x status1 %08x\n", n, s0, SPIR(0x20));
++		}
++		if (s0 != 0) {
++			return true;
++		}
++		a32x_spi_lost++;                /* counts extra polls: 0 = clock estimate holds */
+ 		if (mach_absolute_time() > deadline) {
+-			/* ios28: ~1 packet in 100 never raised STATUS0. If the engine is no
+-			 * longer busy (STATUS1 bit 0) the packet went out: take it. */
+-			if ((SPIR(0x20) & 1u) == 0) {
+-				a32x_spi_lost++;
+-				return true;
+-			}
+ 			return false;
+ 		}
++		a32x_spin_us(25);
+ 	}
+-	return true;
+ }
+ 
+ static void
+@@ -1464,6 +1478,7 @@ a32x_spi_init(uint32_t sck)
+ {
+ 	/* CMD: mode 0, MSB first, little endian FIFO words, no DMA, no deassert,
+ 	 * finish + pause status enabled (the GIC line stays off: we poll STATUS0) */
++	a32x_spi_sck = sck;
+ 	a32x_spi_base_cmd = (1u << 12) | (1u << 13) | (1u << 16) | (1u << 17);
+ 	SPIR(0x18) = a32x_spi_base_cmd | (1u << 2);     /* reset */
+ 	SPIR(0x18) = a32x_spi_base_cmd;
+@@ -1502,7 +1517,7 @@ a32x_spi_xfer2(const uint8_t *h, uint32_t hl, const uint8_t *d, uint32_t dl, uin
+ 		uint32_t cmd = SPIR(0x18);
+ 		SPIR(0x18) = cmd | (first ? 1u : 2u);       /* ACT / RESUME */
+ 		first = false;
+-		if (!a32x_spi_wait()) {
++		if (!a32x_spi_wait(n)) {
+ 			rc = -1;
+ 			break;
+ 		}
+@@ -1618,6 +1633,13 @@ a32x_nvt_download(void)
+ 				left -= n;
+ 			}
+ 		}
++		{
++			uint8_t back[16] = { 0 };
++			int rb = a32x_nvt_read(a32x_nvt_parts[0].sram, back, 16);
++			printf("A32X TOUCH: readback rc %d match %d: %02x %02x %02x %02x %02x %02x %02x %02x\n", rb,
++			    memcmp(back, a32x_nvt_fw + a32x_nvt_parts[0].bin, 16) == 0,
++			    back[0], back[1], back[2], back[3], back[4], back[5], back[6], back[7]);
++		}
+ 		a32x_nvt_crc_bank(NVT_ILM_DES, NVT_ILM_LENGTH, NVT_G_ILM_CHECKSUM,
+ 		    a32x_nvt_parts[0].sram, a32x_nvt_parts[0].size, a32x_nvt_parts[0].hw_crc);
+ 		a32x_nvt_crc_bank(NVT_DLM_DES, NVT_DLM_LENGTH, NVT_G_DLM_CHECKSUM,
