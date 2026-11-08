@@ -1,0 +1,306 @@
+diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
+index 5833fbd..a3502b5 100644
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -49,6 +49,7 @@ extern "C" int sweet_console_muted;     /* osfmk/console/serial_console.c */
+ #include <IOKit/system.h>
+ #include <pexpert/pexpert.h>
+ #include <kern/clock.h>
++#include <kern/thread.h>
+ #include <sys/proc.h>
+ 
+ enum {
+@@ -131,6 +132,7 @@ class AppleCLCD : public IOMobileFramebuffer {
+ 	uint64_t            fVsyncCount;
+ 
+ 	static void vsyncFired(OSObject *owner, IOTimerEventSource *sender);
++	static void presentFired(OSObject *owner, IOTimerEventSource *sender);
+ 
+ public:
+ 	uint64_t      fPhys;
+@@ -139,6 +141,7 @@ public:
+ 	int32_t       fOffX, fOffY;             /* logical origin of the panel */
+ 	bool          fFit;                     /* a32x: scale the logical frame onto the panel */
+ 	uint32_t      fInvQ;                    /* a32x: logical px per panel px, 16.16 */
++	uint32_t      fInvY;                    /* a32x: same for rows (differs when stretched) */
+ 	int32_t       fFitX, fFitY, fFitW, fFitH; /* a32x: scaled frame rect on the panel */
+ 	uintptr_t     fPixels;          /* kernel mapping of the panel memory */
+ 	IOMemoryMap  *fMap;
+@@ -152,6 +155,14 @@ public:
+ 	uint32_t      fFlushTicks;    /* vsync ticks between panel copies */
+ 	bool          fPowerOff;      /* RequestPowerChange(0) */
+ 	uint32_t      fFadeStep;      /* fade-out steps done while off */
++	IOWorkLoop   *fPresentLoop;   /* a32x: panel copy, off the vsync work loop */
++	IOTimerEventSource *fPresentTimer;
++	volatile bool fPresentBusy;
++	int32_t      *fXTab;          /* a32x: panel column -> logical column */
++	uint32_t      fFilter;        /* a32x: 1 = 2x2 average, 0 = nearest */
++	uint32_t      fScaleThreads;  /* a32x: bands per layer */
++	uint64_t      fStatNs;
++	uint32_t      fStatN;
+ 
+ 	bool start(IOService *provider) APPLE_KEXT_OVERRIDE;
+ 	void addClient(IOMobileFramebufferUserClient *client);
+@@ -274,9 +285,49 @@ AppleCLCD::start(IOService *provider)
+ 		}
+ 		fFitX = ((int32_t)fWidth - fFitW) / 2;
+ 		fFitY = ((int32_t)fHeight - fFitH) / 2;
++		/*
++		 * a32x: the letterbox left the bottom rows outside the picture, so iOS
++		 * bottom-edge swipes started on black. iPhone X and this panel differ by
++		 * 2.6% in aspect: stretch to fill (sweetfb_stretch=0 keeps the bars).
++		 */
++		fInvY = fInvQ;
++		int stretch = 1;
++		PE_parse_boot_argn("sweetfb_stretch", &stretch, sizeof(stretch));
++		if (stretch != 0 && (int32_t)fHeight - fFitH < (int32_t)fHeight / 16 && (int32_t)fWidth - fFitW < (int32_t)fWidth / 16) {
++			fInvQ = (uint32_t)invW;
++			fInvY = (uint32_t)invH;
++			fFitX = fFitY = 0;
++			fFitW = (int32_t)fWidth;
++			fFitH = (int32_t)fHeight;
++		}
+ 		IOLog("SWEET FB: a32x fit %ux%u -> %dx%d at %d,%d (inv 0x%x)\n",
+ 		    fLogicalW, fLogicalH, fFitW, fFitH, fFitX, fFitY, fInvQ);
+ 	}
++	if (fFit) {
++		uint32_t th = 3, filter = 1;
++		PE_parse_boot_argn("sweetfb_threads", &th, sizeof(th));
++		PE_parse_boot_argn("sweetfb_filter", &filter, sizeof(filter));
++		if (th == 0 || th > SWEET_SCALE_MAX_THREADS) {
++			th = 3;
++		}
++		fFilter = filter;
++		fXTab = (int32_t *)IOMallocData((size_t)fFitW * sizeof(int32_t));
++		if (fXTab != NULL) {
++			for (int32_t px = 0; px < fFitW; px++) {
++				fXTab[px] = (int32_t)(((uint64_t)px * fInvQ) >> 16);
++			}
++		}
++		sweet_scale_lock = IOLockAlloc();
++		fScaleThreads = sweet_scale_lock != NULL ? th : 1;
++		for (uint32_t i = 1; i < fScaleThreads; i++) {
++			thread_t t;
++			if (kernel_thread_start(sweet_scale_worker, (void *)(uintptr_t)i, &t) != KERN_SUCCESS) {
++				fScaleThreads = 1;      /* bands of a dead worker would never finish */
++				break;
++			}
++			thread_deallocate(t);
++		}
++	}
+ 	fLock = IOLockAlloc();
+ 	fClients = OSArray::withCapacity(4);
+ 	fSurface = sweet_surface_create_physical(fPhys, fWidth, fHeight, fRowBytes, SWEET_FB_FORMAT_BGRA);
+@@ -314,6 +365,16 @@ AppleCLCD::start(IOService *provider)
+ 	uint32_t hz = 10;
+ 	PE_parse_boot_argn("sweetfb_hz", &hz, sizeof(hz));
+ 	fFlushTicks = (hz == 0 || hz >= 60) ? 1 : 60 / hz;
++	if (fFit) {
++		fPresentLoop = IOWorkLoop::workLoop();
++		fPresentTimer = IOTimerEventSource::timerEventSource(this, &AppleCLCD::presentFired);
++		if (fPresentLoop == NULL || fPresentTimer == NULL ||
++		    fPresentLoop->addEventSource(fPresentTimer) != kIOReturnSuccess) {
++			IOLog("SWEET FB: no present loop, copying on the vsync loop
++");
++			OSSafeReleaseNULL(fPresentTimer);
++		}
++	}
+ 	fVsync->setTimeoutUS(SWEET_FB_VSYNC_US);
+ 
+ 	setProperty(kIOUserClientClassKey, "IOMobileFramebufferUserClient");
+@@ -326,6 +387,134 @@ AppleCLCD::start(IOService *provider)
+ 	return true;
+ }
+ 
++/*
++ * a32x (0220): the panel copy was one thread, a 64-bit multiply per pixel and
++ * nearest neighbour, and ran on the vsync work loop, so a slow copy also
++ * slowed the vsync iOS paces itself against. Now: own work loop, per-column
++ * table, bands on helper threads, 2x2 average (the frame is scaled x0.64,
++ * nearest neighbour makes text ragged). sweetfb_filter=0, sweetfb_threads=N.
++ */
++#define SWEET_AVG(a, b) (((a) & (b)) + ((((a) ^ (b)) & 0xfefefefeu) >> 1))
++#define SWEET_SCALE_MAX_THREADS 4
++
++struct SweetScale {
++	AppleCLCD     *fb;
++	const uint8_t *base;
++	uint32_t       bpr;
++	int32_t        sx, sy, dx, dy, w, h, pxFrom, pxTo;
++};
++
++static void
++sweet_scale_band(const SweetScale *j, int32_t py0, int32_t py1)
++{
++	AppleCLCD *fb = j->fb;
++	const int32_t *xt = fb->fXTab;
++	const bool filter = fb->fFilter != 0;
++	for (int32_t py = py0; py < py1; py++) {
++		int32_t ly = (int32_t)(((uint64_t)py * fb->fInvY) >> 16);
++		if (ly < j->dy || ly >= j->dy + j->h) {
++			continue;
++		}
++		const uint32_t *r0 = (const uint32_t *)(j->base + (uint64_t)(j->sy + ly - j->dy) * j->bpr);
++		const uint32_t *r1 = (ly + 1 < j->dy + j->h) ? (const uint32_t *)((const uint8_t *)r0 + j->bpr) : r0;
++		uint32_t *d = (uint32_t *)(fb->fPixels + (uint64_t)(fb->fFitY + py) * fb->fRowBytes +
++		    (uint64_t)(fb->fFitX + j->pxFrom) * 4);
++		int32_t shift = j->sx - j->dx, lastc = j->dx + j->w - 1;
++		if (filter) {
++			for (int32_t px = j->pxFrom; px < j->pxTo; px++) {
++				int32_t c = xt[px], i = c + shift, i1 = c < lastc ? i + 1 : i;
++				uint32_t a = SWEET_AVG(r0[i], r0[i1]);
++				uint32_t b = SWEET_AVG(r1[i], r1[i1]);
++				*d++ = SWEET_AVG(a, b);
++			}
++		} else {
++			for (int32_t px = j->pxFrom; px < j->pxTo; px++) {
++				*d++ = r0[xt[px] + shift];
++			}
++		}
++	}
++}
++
++static IOLock *sweet_scale_lock;
++static uint32_t sweet_scale_gen;
++static const SweetScale *sweet_scale_job;
++static int32_t sweet_scale_bands;
++static volatile SInt32 sweet_scale_left;
++
++extern "C" kern_return_t kernel_thread_start(thread_continue_t, void *, thread_t *);
++
++static void
++sweet_scale_band_n(const SweetScale *j, int32_t band, int32_t bands)
++{
++	int32_t H = j->fb->fFitH;
++	sweet_scale_band(j, (int32_t)(((int64_t)H * band) / bands), (int32_t)(((int64_t)H * (band + 1)) / bands));
++}
++
++static void
++sweet_scale_worker(void *arg, __unused wait_result_t wr)
++{
++	int32_t band = (int32_t)(uintptr_t)arg;
++	uint32_t seen = 0;
++	for (;;) {
++		IOLockLock(sweet_scale_lock);
++		while (sweet_scale_gen == seen) {
++			IOLockSleep(sweet_scale_lock, &sweet_scale_gen, THREAD_UNINT);
++		}
++		seen = sweet_scale_gen;
++		const SweetScale *j = sweet_scale_job;
++		int32_t bands = sweet_scale_bands;
++		IOLockUnlock(sweet_scale_lock);
++		sweet_scale_band_n(j, band, bands);
++		OSDecrementAtomic(&sweet_scale_left);
++	}
++}
++
++/* Runs one layer over all bands and returns when every band is done. */
++static void
++sweet_scale_run(const SweetScale *j, int32_t bands)
++{
++	if (bands > 1) {
++		IOLockLock(sweet_scale_lock);
++		sweet_scale_job = j;
++		sweet_scale_bands = bands;
++		sweet_scale_left = bands - 1;
++		sweet_scale_gen++;
++		IOLockWakeup(sweet_scale_lock, &sweet_scale_gen, false);
++		IOLockUnlock(sweet_scale_lock);
++	}
++	sweet_scale_band_n(j, 0, bands);
++	if (bands > 1) {
++		while (sweet_scale_left > 0) {
++			__asm__ volatile ("yield");
++		}
++	}
++}
++
++void
++AppleCLCD::presentFired(OSObject *owner, __unused IOTimerEventSource *sender)
++{
++	AppleCLCD *fb = (AppleCLCD *)owner;
++	uint8_t *rec = (uint8_t *)IOMallocData(SWEET_FB_SWAP_REC_SIZE);
++	if (rec != NULL) {
++		IOLockLock(fb->fLock);
++		memcpy(rec, fb->fPending, SWEET_FB_SWAP_REC_SIZE);
++		fb->fDirty = false;
++		IOLockUnlock(fb->fLock);
++		uint64_t t0 = mach_absolute_time(), ns;
++		fb->present(rec);
++		absolutetime_to_nanoseconds(mach_absolute_time() - t0, &ns);
++		IOFreeData(rec, SWEET_FB_SWAP_REC_SIZE);
++		fb->fStatNs += ns;
++		if (++fb->fStatN == 240) {
++			IOLog("SWEET FB: present avg %llu us over 240 frames, filter %u, %u bands\n",
++			    fb->fStatNs / 240000, fb->fFilter, fb->fScaleThreads);
++			fb->fStatN = 0;
++			fb->fStatNs = 0;
++		}
++	}
++	fb->fPresentBusy = false;
++}
++
+ void
+ AppleCLCD::vsyncFired(OSObject *owner, IOTimerEventSource *sender)
+ {
+@@ -364,6 +553,17 @@ AppleCLCD::vsyncFired(OSObject *owner, IOTimerEventSource *sender)
+ 	}
+ 	bool flush = fb->fDirty && (count % fb->fFlushTicks) == 0;
+ 	uint8_t *rec = NULL;
++	if (flush && fb->fPresentTimer != NULL) {
++		if (!fb->fPresentBusy) {
++			fb->fPresentBusy = true;
++			IOLockUnlock(fb->fLock);
++			fb->fPresentTimer->setTimeoutUS(1);
++		} else {
++			IOLockUnlock(fb->fLock);
++		}
++		sender->setTimeoutUS(SWEET_FB_VSYNC_US);
++		return;
++	}
+ 	if (flush) {
+ 		rec = (uint8_t *)IOMallocData(SWEET_FB_SWAP_REC_SIZE);
+ 		if (rec != NULL) {
+@@ -506,22 +706,27 @@ AppleCLCD::present(const uint8_t *rec)
+ 			uint64_t flast = (uint64_t)s->offset + (uint64_t)(sy + h - 1) * s->bytesPerRow +
+ 			    (uint64_t)(sx + w) * 4;
+ 			if (w > 0 && h > 0 && bpe == 4 && s->elementWidth == 1 && s->elementHeight == 1 &&
+-			    s->memory != NULL && flast <= s->memory->getLength()) {
+-				for (int32_t py = 0; py < fFitH; py++) {
+-					int32_t ly = (int32_t)(((uint64_t)py * fInvQ) >> 16);
+-					if (ly < dy || ly >= dy + h) {
+-						continue;
+-					}
+-					const uint32_t *srow = (const uint32_t *)(src + s->offset +
+-					    (uint64_t)(sy + ly - dy) * s->bytesPerRow);
+-					uint32_t *drow = (uint32_t *)(fPixels + (uint64_t)(fFitY + py) * fRowBytes);
+-					for (int32_t px = 0; px < fFitW; px++) {
+-						int32_t lx = (int32_t)(((uint64_t)px * fInvQ) >> 16);
+-						if (lx >= dx && lx < dx + w) {
+-							drow[fFitX + px] = srow[sx + lx - dx];
+-						}
+-					}
++			    s->memory != NULL && flast <= s->memory->getLength() && fXTab != NULL) {
++				SweetScale job;
++				int32_t from = 0, to = fFitW;
++				while (from < to && fXTab[from] < dx) {
++					from++;
++				}
++				while (to > from && fXTab[to - 1] >= dx + w) {
++					to--;
+ 				}
++				job.fb = this;
++				job.base = (const uint8_t *)(src + s->offset);
++				job.bpr = s->bytesPerRow;
++				job.sx = sx;
++				job.sy = sy;
++				job.dx = dx;
++				job.dy = dy;
++				job.w = w;
++				job.h = h;
++				job.pxFrom = from;
++				job.pxTo = to;
++				sweet_scale_run(&job, (int32_t)fScaleThreads);
+ 			}
+ 			s->release();
+ 			continue;

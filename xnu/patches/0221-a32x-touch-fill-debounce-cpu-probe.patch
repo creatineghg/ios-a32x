@@ -1,0 +1,115 @@
+diff --git a/bsd/dev/sweet_ufs.c b/bsd/dev/sweet_ufs.c
+index 3b8fa9a..aa5edd4 100644
+--- a/bsd/dev/sweet_ufs.c
++++ b/bsd/dev/sweet_ufs.c
+@@ -1675,24 +1675,26 @@ a32x_nvt_download(void)
+ static void
+ a32x_touch_map(int px, int py, int *ox, int *oy)
+ {
+-	/* 720x1600 panel -> 1125x2436 logical (fit: x * 1125/720, y offset 20 rows) -> 1080x2400 centred */
+-	int lx = (int)(((int64_t)px * 1125) / 720);
+-	int ly = (int)(((int64_t)(py - 20) * 1125) / 720);
+-	*ox = lx - 22;
+-	*oy = ly - 18;
++	/*
++	 * The picture now fills the panel (0220), and SweetHIDTouch divides by
++	 * 1080x2400 to get the screen fraction: panel fraction = screen fraction.
++	 */
++	*ox = (px * 3) / 2;
++	*oy = (py * 3) / 2;
+ }
+ 
+ static void
+ a32x_touch_thread(__unused void *arg, __unused wait_result_t wr)
+ {
+-	uint32_t hz = 60, sck = 8;
++	uint32_t hz = 100, sck = 8;
+ 	uint8_t ev[66];
+ 	bool down[10] = { false };
++	uint8_t miss[10] = { 0 };
+ 	uint32_t raw_logged = 0;
+ 	PE_parse_boot_argn("a32xtouchhz", &hz, sizeof(hz));
+ 	PE_parse_boot_argn("a32xspidiv", &sck, sizeof(sck));
+ 	if (hz == 0 || hz > 200) {
+-		hz = 60;
++		hz = 100;
+ 	}
+ 	if (sck == 0 || sck > 0xffff) {
+ 		sck = 8;
+@@ -1763,7 +1765,12 @@ a32x_touch_thread(__unused void *arg, __unused wait_result_t wr)
+ 				sweet_hid_touch(fid - 1, 1, ox, oy);
+ 			}
+ 			for (int f = 0; f < 10; f++) {
+-				if (down[f] && !seen[f]) {
++				if (seen[f]) {
++					miss[f] = 0;
++				}
++				/* polled, no IRQ handshake: one empty read is not a lift (2 polls = 20 ms) */
++				if (down[f] && !seen[f] && ++miss[f] >= 2) {
++					miss[f] = 0;
+ 					down[f] = false;
+ 					sweet_hid_touch(f, 0, 0, 0);
+ 					printf("A32X TOUCH: finger %d up\n", f + 1);
+@@ -1774,6 +1781,49 @@ a32x_touch_thread(__unused void *arg, __unused wait_result_t wr)
+ 	}
+ }
+ 
++/*
++ * a32x: real clock of each core (PMU cycle counter against the system timer,
++ * 1 ms, interrupts off). Boot firmware picks the clocks; XNU has no DVFS here.
++ */
++extern processor_t cpu_to_processor(int cpu);
++extern processor_t thread_bind(processor_t processor);
++
++static void
++a32x_cpu_probe(__unused void *arg, __unused wait_result_t wr)
++{
++	a32x_sleep_ms(15000);
++	for (int i = 0; i < 8; i++) {
++		processor_t p = cpu_to_processor(i);
++		uint64_t t0, t1, c0, c1, mpidr, ns, v;
++		if (p == NULL) {
++			continue;
++		}
++		thread_bind(p);
++		thread_block(THREAD_CONTINUE_NULL);
++		boolean_t intr = ml_set_interrupts_enabled(FALSE);
++		__asm__ volatile ("mrs %0, MPIDR_EL1" : "=r"(mpidr));
++		__asm__ volatile ("mrs %0, PMCR_EL0" : "=r"(v));
++		v |= 1;
++		__asm__ volatile ("msr PMCR_EL0, %0" : : "r"(v));
++		v = 1ull << 31;
++		__asm__ volatile ("msr PMCNTENSET_EL0, %0" : : "r"(v));
++		__asm__ volatile ("isb sy");
++		t0 = mach_absolute_time();
++		__asm__ volatile ("mrs %0, PMCCNTR_EL0" : "=r"(c0));
++		a32x_spin_us(1000);
++		__asm__ volatile ("mrs %0, PMCCNTR_EL0" : "=r"(c1));
++		t1 = mach_absolute_time();
++		ml_set_interrupts_enabled(intr);
++		absolutetime_to_nanoseconds(t1 - t0, &ns);
++		printf("A32X CPU: logical %d mpidr 0x%llx: %llu MHz\n", i, mpidr & 0xffffff, ns ? ((c1 - c0) * 1000) / ns : 0);
++	}
++	thread_bind((processor_t)NULL);
++	thread_block(THREAD_CONTINUE_NULL);
++	for (;;) {
++		a32x_sleep_ms(3600000);
++	}
++}
++
+ static void
+ a32x_touch_start(void)
+ {
+@@ -1806,6 +1856,12 @@ a32x_wdt_kick_start(void)
+ 	started = true;
+ 	a32x_keys_start();
+ 	a32x_touch_start();
++	{
++		thread_t pt;
++		if (kernel_thread_start(a32x_cpu_probe, NULL, &pt) == KERN_SUCCESS) {
++			thread_deallocate(pt);
++		}
++	}
+ 	PE_parse_boot_argn("a32x_wdtkick", &secs, sizeof(secs));
+ 	if (secs == 0) {
+ 		printf("A32X WDT: kicker off (a32x_wdtkick=0)\n");
